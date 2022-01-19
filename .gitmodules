@@ -1,0 +1,6 @@
+[submodule "Gigwa2ServiceInterface"]
+	path = Gigwa2ServiceInterface
+	url = https://github.com/SouthGreenPlatform/Gigwa2ServiceInterface
+[submodule "Mgdb2Export"]
+	path = Mgdb2Export
+	url = https://github.com/SouthGreenPlatform/Mgdb2Export
