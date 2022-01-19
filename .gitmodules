@@ -4,3 +4,4 @@
 [submodule "Mgdb2Export"]
 	path = Mgdb2Export
 	url = https://github.com/SouthGreenPlatform/Mgdb2Export
+	branch = submodules
