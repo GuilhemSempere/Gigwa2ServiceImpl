@@ -2818,7 +2818,7 @@ public class GigwaGa4ghServiceImpl implements GigwaMethods, VariantMethods, Refe
         DBVCFHeader vcfHeader;
 
         VCFInfoHeaderLine vci;
-        VCFFilterHeaderLine vcf;
+        VCFSimpleHeaderLine vcf;
         VCFFormatHeaderLine vcfo;
         VCFSimpleHeaderLine vcm;
         VCFHeaderLine vcmo;
