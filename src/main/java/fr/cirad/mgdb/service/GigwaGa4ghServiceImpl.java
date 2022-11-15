@@ -129,7 +129,7 @@ import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
-import fr.cirad.model.GigwaDensityRequest;
+import fr.cirad.model.GigwaChartRequest;
 import fr.cirad.model.GigwaSearchCallSetsRequest;
 import fr.cirad.model.GigwaSearchReferencesRequest;
 import fr.cirad.model.GigwaSearchVariantsExportRequest;
@@ -383,11 +383,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             }
 
             /* Step to match variants position range for visualization (differs from the 2 next, which is for defining the subset of data Gigwa is currently working with: it they are contradictory it still makes sense and means user is trying to view variants outside the range selected in Gigwa) */
-            if (GigwaDensityRequest.class.isAssignableFrom(gsvr.getClass())) {
-                variantFeatureFilterList.add(new BasicDBObject(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, ((GigwaDensityRequest) gsvr).getDisplayedSequence()));
+            if (GigwaChartRequest.class.isAssignableFrom(gsvr.getClass())) {
+                variantFeatureFilterList.add(new BasicDBObject(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, ((GigwaChartRequest) gsvr).getDisplayedSequence()));
 
                 BasicDBObject posCrit = new BasicDBObject();
-                Long min = ((GigwaDensityRequest) gsvr).getDisplayedRangeMin(), max = ((GigwaDensityRequest) gsvr).getDisplayedRangeMax();
+                Long min = ((GigwaChartRequest) gsvr).getDisplayedRangeMin(), max = ((GigwaChartRequest) gsvr).getDisplayedRangeMax();
                 if (min != null && min != -1)
                     posCrit.put("$gte", min);
                 if (max != null && max != -1)

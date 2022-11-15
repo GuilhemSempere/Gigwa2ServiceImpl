@@ -40,7 +40,7 @@ import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData.VariantRunDataId;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
-import fr.cirad.model.GigwaDensityRequest;
+import fr.cirad.model.GigwaChartRequest;
 import fr.cirad.model.GigwaSearchVariantsRequest;
 import fr.cirad.model.GigwaVcfFieldPlotRequest;
 import fr.cirad.tools.Helper;
@@ -64,7 +64,7 @@ public class VisualizationService {
     
 	@Autowired private GigwaGa4ghServiceImpl ga4ghService;
 	
-    public boolean findDefaultRangeMinMax(GigwaDensityRequest gsvdr, String collectionName, ProgressIndicator progress)
+    public boolean findDefaultRangeMinMax(GigwaChartRequest gsvdr, String collectionName, ProgressIndicator progress)
     {
         String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvdr.getVariantSetId(), 2);
         String sModule = info[0];
@@ -111,7 +111,7 @@ public class VisualizationService {
 		return true;
 	}
     
-    public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
+    public Map<Long, Long> selectionDensity(GigwaChartRequest gdr) throws Exception {
         long before = System.currentTimeMillis();
 
         String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
@@ -229,7 +229,7 @@ public class VisualizationService {
 		}
     }
 
-    public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
+    public Map<Long, Double> selectionFst(GigwaChartRequest gdr) throws Exception {
     	long before = System.currentTimeMillis();
 
         String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
@@ -263,7 +263,20 @@ public class VisualizationService {
 		final long rangeMin = gdr.getDisplayedRangeMin();
 		final ProgressIndicator finalProgress = progress;
 
-		List<BasicDBObject> baseQuery = buildFstQuery(gdr, useTempColl);
+        int projId = Integer.parseInt(info[1]);
+    	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
+        if (gdr.getDisplayedAdditionalGroups() == null) {
+        	if (gdr.treatFirstGroupIndividualsAsSingletons())
+        		gdr.getCallSetIds().stream().forEach(csi -> selectedIndividuals.add(Arrays.asList(csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR)))));
+        	else
+            	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+       		selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        } else {
+        	for (Collection<String> group : gdr.getDisplayedAdditionalGroups()) {
+        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        	}
+        }
+		List<BasicDBObject> baseQuery = buildFstQuery(sModule, projId, selectedIndividuals, useTempColl);
 
 		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
@@ -427,7 +440,7 @@ public class VisualizationService {
 		return new TreeMap<Long, Double>(result);
     }
     
-    public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
+    public List<Map<Long, Double>> selectionTajimaD(GigwaChartRequest gdr) throws Exception {
 		long before = System.currentTimeMillis();
 
         String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
@@ -533,11 +546,7 @@ public class VisualizationService {
     private static final String GENOTYPE_DATA_S10_INDIVIDUALID = "ii";
     private static final String GENOTYPE_DATA_S10_SAMPLEINDEX = "sx";
 
-    private List<BasicDBObject> buildGenotypeDataQuery(GigwaDensityRequest gdr, boolean useTempColl, Map<String, List<GenotypingSample>> individualToSampleListMap, boolean keepPosition) {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
-        String sModule = info[0];
-        int projId = Integer.parseInt(info[1]);
-
+    private List<BasicDBObject> buildGenotypeDataQuery(String sModule, int projId, boolean useTempColl, Map<String, List<GenotypingSample>> individualToSampleListMap, boolean keepPosition) {
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         GenotypingProject genotypingProject = mongoTemplate.findById(Integer.valueOf(projId), GenotypingProject.class);
 
@@ -677,30 +686,17 @@ public class VisualizationService {
     private static final String FST_RES_ALLELES = "as";
     private static final String FST_RES_POPULATIONS = "ps";
 
-    private List<BasicDBObject> buildFstQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
-        String sModule = info[0];
-        int projId = Integer.parseInt(info[1]);
-
-    	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
-        if (gdr.getDisplayedAdditionalGroups() == null) {
-        	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
-        	selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
-        } else {
-        	for (Collection<String> group : gdr.getDisplayedAdditionalGroups()) {
-        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
-        	}
-        }
+    private List<BasicDBObject> buildFstQuery(String sModule, int projId, List<Collection<String>> individualGroups, boolean useTempColl) throws ObjectNotFoundException {
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
-        for (Collection<String> group : selectedIndividuals) {
+        for (Collection<String> group : individualGroups) {
         	individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, group));
         }
 
-    	List<BasicDBObject> pipeline = buildGenotypeDataQuery(gdr, useTempColl, individualToSampleListMap, false);
+    	List<BasicDBObject> pipeline = buildGenotypeDataQuery(sModule, projId, useTempColl, individualToSampleListMap, false);
 
     	// Stage 14 : Get populations genotypes
     	BasicDBList populationGenotypes = new BasicDBList();
-    	for (Collection<String> group : selectedIndividuals) {
+    	for (Collection<String> group : individualGroups) {
     		populationGenotypes.add(getFullPathToGenotypes(sModule, projId, group, individualToSampleListMap));
     	}
 
@@ -804,7 +800,7 @@ public class VisualizationService {
     private static final String TJD_RES_SEGREGATINGSITES = "sg";
     private static final String TJD_RES_TAJIMAD = "tjd";
 
-    private List<BasicDBObject> buildTajimaDQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+    private List<BasicDBObject> buildTajimaDQuery(GigwaChartRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
     	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
@@ -836,7 +832,7 @@ public class VisualizationService {
         double e1 = c1 / a1;
         double e2 = c2 / (a1*a1 + a2);
 
-    	List<BasicDBObject> pipeline = buildGenotypeDataQuery(gdr, useTempColl, individualToSampleListMap, true);
+    	List<BasicDBObject> pipeline = buildGenotypeDataQuery(sModule, projId, useTempColl, individualToSampleListMap, true);
 
     	// Stage 14 : Get the genotypes needed
     	BasicDBList genotypePaths = getFullPathToGenotypes(sModule, projId, selectedIndividuals, individualToSampleListMap);
