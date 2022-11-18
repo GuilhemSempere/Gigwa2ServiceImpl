@@ -420,7 +420,7 @@ public class VisualizationService {
         			}
 
         			result.put(rangeMin + (chunkIndex*intervalSize), weightedFstSum / fstWeight);
-        			finalProgress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
+        			finalProgress.setCurrentStepProgress((short) (result.size() * 100 / gdr.getDisplayedRangeIntervalCount()));
         		}
             };
 
