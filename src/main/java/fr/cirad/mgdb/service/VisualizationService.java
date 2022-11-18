@@ -324,9 +324,18 @@ public class VisualizationService {
         			 * }
         			 */
 
-        			double weightedFstSum = 0;
-        			double fstWeight = 0;
+//        			double windowWeightedFstSum = 0;
+//        			double windowFstWeight = 0;
+        			
+        			
+        			// for handling introgession search (comparing each individual in group 1 against the entire group 2)            		
+            		int nComparisonCount = !gdr.treatFirstGroupIndividualsAsSingletons() ? 1 : gdr.getCallSetIds().size() + 1;
+        			double[] windowWeightedFstSums = new double[nComparisonCount];
+    				Arrays.fill(windowWeightedFstSums, 0);
+        			double[] windowFstWeights = new double[nComparisonCount];
+    				Arrays.fill(windowFstWeights, 0);
 
+    				int nComparisonIndex = 0;
         			while (it.hasNext()) {
         				Document variantResult = it.next();
         				//String variantId = variantResult.getString("_id");
@@ -337,89 +346,32 @@ public class VisualizationService {
         					// One of the populations has no valid data
         					continue;
         				}
-        				int numPopulations = populations.size();  // r : Number of samples to consider
-        				int numAlleles = variantResult.getInteger(FST_RES_ALLELEMAX) + 1;
-
-        				// Transposition to [allele][sample] instead of the original [sample][allele] is important to simplify further computations
-        				int[] sampleSizes = new int[numPopulations];  // n_i = sampleSizes[population] : Size of the population samples (with missing data filtered out)
-        				double[][] alleleFrequencies = new double[numAlleles][numPopulations];  // p_i = alleleFrequencies[allele][population] : Allele frequency in the given population
-        				double[][] hetFrequencies = new double[numAlleles][numPopulations];  // h_i = hetFrequencies[allele][population] : Proportion of heterozygotes with the given allele in the given population
-        				//double[] averageAlleleFrequencies = new double[numAlleles];  // p¯ = averageAlleleFrequencies[allele] : Average frequency of the allele over all populations
-    					//double[] alleleVariance = new double[numAlleles];  // s² = alleleVariance[allele] : Variance of the allele frequency over the populations
-    					//double[] averageHetFrequencies = new double[numAlleles];  // h¯ = averageHetFrequencies : Proportion of heterozygotes with the given allele over all populations
-
-    					//Arrays.fill(averageAlleleFrequencies, 0);
-    					//Arrays.fill(alleleVariance, 0);
-    					//Arrays.fill(averageHetFrequencies, 0);
-
-    					for (int allele = 0; allele < numAlleles; allele++) {
-    						Arrays.fill(alleleFrequencies[allele], 0);
-    						Arrays.fill(hetFrequencies[allele], 0);
-    					}
-
-    					int popIndex = 0;
-        				for (Document populationResult : populations) {
-        					int sampleSize = populationResult.getInteger(FST_RES_SAMPLESIZE);
-        					List<Document> alleles = populationResult.getList(FST_RES_ALLELES, Document.class);
-
-        					for (Document alleleResult : alleles) {
-        						int allele = alleleResult.getInteger(FST_RES_ALLELEID);
-        						alleleFrequencies[allele][popIndex] = alleleResult.getDouble(FST_RES_ALLELEFREQUENCY);
-        						hetFrequencies[allele][popIndex] = alleleResult.getDouble(FST_RES_HETEROZYGOTEFREQUENCY);
-        					}
-
-        					sampleSizes[popIndex] = sampleSize;
-        					popIndex += 1;
+        				
+        				if (gdr.treatFirstGroupIndividualsAsSingletons()) {
+        					List<Document> nonSingletonPops = populations.stream().filter(pop -> pop.getInteger(FST_RES_SAMPLESIZE) > 1).toList();
+//        					System.err.println(nonSingletonPops);
+        					
+            				for (int i=0; i<populations.size(); i++) {
+            					Document pop = populations.get(i);
+	        					int sampleSize = pop.getInteger(FST_RES_SAMPLESIZE);
+	        					if (sampleSize == 1) {
+	    	        				Double[] variantFst = calculateVariantFst(variantResult, Arrays.asList(nonSingletonPops.get(0), pop));
+	    							windowWeightedFstSums[i] += variantFst[0];
+	    							windowFstWeights[i] += variantFst[1];
+	            				}
+	        				}
+            				
+//            				TODO: fill-in result object for this case
         				}
-
-        				double averageSampleSize = (double)IntStream.of(sampleSizes).sum() / numPopulations;  // n¯ : Average sample size
-        				double totalSize = averageSampleSize * numPopulations;  // r × n¯
-        				double sampleSizeCorrection = (totalSize - IntStream.of(sampleSizes).mapToDouble(size -> size*size / totalSize).sum() / (numPopulations - 1));  // n_c
-
-        				for (int allele = 0; allele < numAlleles; allele++) {
-        					// Compute weighted averages of allele frequencies (p¯) and heterozygote proportions (h¯)
-        					double averageAlleleFrequency = 0.0;
-        					double averageHetFrequency = 0.0;
-        					for (popIndex = 0; popIndex < numPopulations; popIndex++) {
-        						averageAlleleFrequency += sampleSizes[popIndex] * alleleFrequencies[allele][popIndex] / totalSize;
-        						averageHetFrequency += sampleSizes[popIndex] * hetFrequencies[allele][popIndex] / totalSize;
-        					}
-
-        					// Compute allele frequency variance (s²)
-        					double alleleVariance = 0.0;
-        					for (popIndex = 0; popIndex < numPopulations; popIndex++) {
-        						alleleVariance += sampleSizes[popIndex] * Math.pow(alleleFrequencies[allele][popIndex] - averageAlleleFrequency, 2) / (averageSampleSize * (numPopulations - 1));
-        					}
-
-        					// a = (n¯/nc) × (s² - (1 / (n¯-1))(p¯(1-p¯) - s²(r-1) / r - h¯/4))
-							double populationVariance = (
-									(averageSampleSize / sampleSizeCorrection) * (
-										alleleVariance - (1 / (averageSampleSize - 1)) * (
-											averageAlleleFrequency * (1 - averageAlleleFrequency) -
-											(numPopulations - 1) * alleleVariance / numPopulations -
-											averageHetFrequency / 4
-										)
-									)
-								);
-
-							// b = (n¯ / (n¯-1))(p¯(1-p¯) - s²(r-1) / r - h¯(2n¯-1)/4n¯)
-							double individualVariance = (averageSampleSize / (averageSampleSize - 1)) * (
-									averageAlleleFrequency * (1 - averageAlleleFrequency) -
-									alleleVariance * (numPopulations-1) / numPopulations -
-									averageHetFrequency * (2*averageSampleSize - 1) / (4 * averageSampleSize)
-								);
-
-							// c = h¯/2
-							double gameteVariance = averageHetFrequency / 2;
-
-							if (!Double.isNaN(populationVariance) && !Double.isNaN(individualVariance) && !Double.isNaN(gameteVariance)) {
-								weightedFstSum += populationVariance;
-								fstWeight += populationVariance + individualVariance + gameteVariance;
-							}
+        				else {
+	        				Double[] variantFst = calculateVariantFst(variantResult, populations);
+							windowWeightedFstSums[0] += variantFst[0];
+							windowFstWeights[0] += variantFst[1];
         				}
+        				nComparisonIndex++;
         			}
 
-        			result.put(rangeMin + (chunkIndex*intervalSize), weightedFstSum / fstWeight);
+        			result.put(rangeMin + (chunkIndex*intervalSize), windowWeightedFstSums[0] / windowFstWeights[0]);
         			finalProgress.setCurrentStepProgress((short) (result.size() * 100 / gdr.getDisplayedRangeIntervalCount()));
         		}
             };
@@ -434,10 +386,95 @@ public class VisualizationService {
 			return null;
 
 		progress.setCurrentStepProgress(100);
-		LOG.info("selectionDensity treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
+		LOG.info("selectionFst treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
 		progress.markAsComplete();
 
 		return new TreeMap<Long, Double>(result);
+    }
+    
+    private Double[] calculateVariantFst(Document variantResult, List<Document> populations) {
+    	
+		int numPopulations = populations.size();  // r : Number of samples to consider
+		int numAlleles = variantResult.getInteger(FST_RES_ALLELEMAX) + 1;
+
+		// Transposition to [allele][sample] instead of the original [sample][allele] is important to simplify further computations
+		int[] sampleSizes = new int[numPopulations];  // n_i = sampleSizes[population] : Size of the population samples (with missing data filtered out)
+		double[][] alleleFrequencies = new double[numAlleles][numPopulations];  // p_i = alleleFrequencies[allele][population] : Allele frequency in the given population
+		double[][] hetFrequencies = new double[numAlleles][numPopulations];  // h_i = hetFrequencies[allele][population] : Proportion of heterozygotes with the given allele in the given population
+		
+		for (int allele = 0; allele < numAlleles; allele++) {
+			Arrays.fill(alleleFrequencies[allele], 0);
+			Arrays.fill(hetFrequencies[allele], 0);
+		}
+
+		ArrayList<Integer> nonSingletonPops = new ArrayList<>();
+		int popIndex = 0;
+		for (Document populationResult : populations) {
+			int sampleSize = populationResult.getInteger(FST_RES_SAMPLESIZE);
+			if (sampleSize > 1)
+				nonSingletonPops.add(popIndex);
+
+			List<Document> alleles = populationResult.getList(FST_RES_ALLELES, Document.class);
+
+			for (Document alleleResult : alleles) {
+				int allele = alleleResult.getInteger(FST_RES_ALLELEID);
+				alleleFrequencies[allele][popIndex] = alleleResult.getDouble(FST_RES_ALLELEFREQUENCY);
+				hetFrequencies[allele][popIndex] = alleleResult.getDouble(FST_RES_HETEROZYGOTEFREQUENCY);
+			}
+
+			sampleSizes[popIndex] = sampleSize;
+			popIndex += 1;
+		}
+		
+		double averageSampleSize = (double)IntStream.of(sampleSizes).sum() / numPopulations;  // n¯ : Average sample size
+		double totalSize = averageSampleSize * numPopulations;  // r × n¯
+		double sampleSizeCorrection = (totalSize - IntStream.of(sampleSizes).mapToDouble(size -> size*size / totalSize).sum() / (numPopulations - 1));  // n_c
+		
+		double weightedFstSum = 0;
+		double fstWeight = 0;
+
+		for (int allele = 0; allele < numAlleles; allele++) {
+			// Compute weighted averages of allele frequencies (p¯) and heterozygote proportions (h¯)
+			double averageAlleleFrequency = 0.0;
+			double averageHetFrequency = 0.0;
+			for (popIndex = 0; popIndex < numPopulations; popIndex++) {
+				averageAlleleFrequency += sampleSizes[popIndex] * alleleFrequencies[allele][popIndex] / totalSize;
+				averageHetFrequency += sampleSizes[popIndex] * hetFrequencies[allele][popIndex] / totalSize;
+			}
+
+			// Compute allele frequency variance (s²)
+			double alleleVariance = 0.0;
+			for (popIndex = 0; popIndex < numPopulations; popIndex++) {
+				alleleVariance += sampleSizes[popIndex] * Math.pow(alleleFrequencies[allele][popIndex] - averageAlleleFrequency, 2) / (averageSampleSize * (numPopulations - 1));
+			}
+
+			// a = (n¯/nc) × (s² - (1 / (n¯-1))(p¯(1-p¯) - s²(r-1) / r - h¯/4))
+			double populationVariance = (
+					(averageSampleSize / sampleSizeCorrection) * (
+						alleleVariance - (1 / (averageSampleSize - 1)) * (
+							averageAlleleFrequency * (1 - averageAlleleFrequency) -
+							(numPopulations - 1) * alleleVariance / numPopulations -
+							averageHetFrequency / 4
+						)
+					)
+				);
+
+			// b = (n¯ / (n¯-1))(p¯(1-p¯) - s²(r-1) / r - h¯(2n¯-1)/4n¯)
+			double individualVariance = (averageSampleSize / (averageSampleSize - 1)) * (
+					averageAlleleFrequency * (1 - averageAlleleFrequency) -
+					alleleVariance * (numPopulations-1) / numPopulations -
+					averageHetFrequency * (2*averageSampleSize - 1) / (4 * averageSampleSize)
+				);
+
+			// c = h¯/2
+			double gameteVariance = averageHetFrequency / 2;
+
+			if (!Double.isNaN(populationVariance) && !Double.isNaN(individualVariance) && !Double.isNaN(gameteVariance)) {
+				weightedFstSum += populationVariance;
+				fstWeight += populationVariance + individualVariance + gameteVariance;
+			}
+		}
+		return new Double[] {weightedFstSum, fstWeight}; 
     }
     
     public List<Map<Long, Double>> selectionTajimaD(GigwaChartRequest gdr) throws Exception {
