@@ -298,8 +298,7 @@ public class VisualizationService {
 			List<BasicDBObject> windowQuery = new ArrayList<BasicDBObject>(baseQuery);
 			windowQuery.set(0, new BasicDBObject("$match", initialMatchStage));
 
-			//try { System.out.println(new ObjectMapper().writeValueAsString(windowQuery)); }
-            //catch (Exception ignored) {}
+			//if (i==0) try { System.err.println(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(windowQuery)); } catch (Exception ignored) {}
 
             Thread t = new Thread() {
             	public void run() {
@@ -351,7 +350,7 @@ public class VisualizationService {
         					List<Document> nonSingletonPops = populations.stream().filter(pop -> pop.getInteger(FST_RES_SAMPLESIZE) > 1).toList();
 //        					System.err.println(nonSingletonPops);
         					if (nonSingletonPops.size() != 1) {
-        						LOG.warn("nonSingletonPops size " + nonSingletonPops.size() + " for variant " + variantResult);
+//        						LOG.warn("nonSingletonPops size " + nonSingletonPops.size() + " for variant " + variantResult);
         						continue;
         					}
         					
@@ -822,6 +821,7 @@ public class VisualizationService {
     	BasicDBObject groupVariantPopulation = new BasicDBObject();
     	groupVariantPopulation.put(FST_RES_SAMPLESIZE, "$" + FST_RES_SAMPLESIZE);
     	groupVariantPopulation.put(FST_RES_ALLELES, "$" + FST_RES_ALLELES);
+    	groupVariantPopulation.put(FST_S22_POPULATIONID, "$_id." + FST_S22_POPULATIONID);
     	groupVariant.put(FST_RES_POPULATIONS, new BasicDBObject("$push", groupVariantPopulation));
     	pipeline.add(new BasicDBObject("$group", groupVariant));
 
