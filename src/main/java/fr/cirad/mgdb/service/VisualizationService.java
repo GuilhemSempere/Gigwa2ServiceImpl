@@ -350,6 +350,10 @@ public class VisualizationService {
         				if (gdr.treatFirstGroupIndividualsAsSingletons()) {
         					List<Document> nonSingletonPops = populations.stream().filter(pop -> pop.getInteger(FST_RES_SAMPLESIZE) > 1).toList();
 //        					System.err.println(nonSingletonPops);
+        					if (nonSingletonPops.size() != 1) {
+        						LOG.warn("nonSingletonPops size " + nonSingletonPops.size() + " for variant " + variantResult);
+        						continue;
+        					}
         					
             				for (int i=0; i<populations.size(); i++) {
             					Document pop = populations.get(i);
