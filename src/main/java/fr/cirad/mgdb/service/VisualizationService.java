@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -298,7 +299,7 @@ public class VisualizationService {
 			List<BasicDBObject> windowQuery = new ArrayList<BasicDBObject>(baseQuery);
 			windowQuery.set(0, new BasicDBObject("$match", initialMatchStage));
 
-			//if (i==0) try { System.err.println(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(windowQuery)); } catch (Exception ignored) {}
+			if (i==0) try { System.err.println(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(windowQuery)); } catch (Exception ignored) {}
 
             Thread t = new Thread() {
             	public void run() {
@@ -314,7 +315,7 @@ public class VisualizationService {
         			 * 		_id: ...,
         			 * 		alleleMax: 1,
         			 * 		populations: [
-        			 * 			{sampleSize: 100, alleles: [
+        			 * 			{popIndex:0, sampleSize: 100, alleles: [
         			 * 				{allele: 0, alleleFrequency: 0.45, heterozygoteFrequency: 0.31},
         			 * 				{allele: 1, alleleFrequency: 0.55, heterozygoteFrequency: 0.31},
         			 * 			]},
@@ -346,23 +347,18 @@ public class VisualizationService {
         					continue;
         				}
         				
-        				if (gdr.treatFirstGroupIndividualsAsSingletons()) {
-        					List<Document> nonSingletonPops = populations.stream().filter(pop -> pop.getInteger(FST_RES_SAMPLESIZE) > 1).toList();
-//        					System.err.println(nonSingletonPops);
-        					if (nonSingletonPops.size() != 1) {
-//        						LOG.warn("nonSingletonPops size " + nonSingletonPops.size() + " for variant " + variantResult);
-        						continue;
-        					}
-        					
+        				if (gdr.treatFirstGroupIndividualsAsSingletons()) {        					
+            				Optional<Document> nonSingletonPop = populations.parallelStream().filter(pop -> pop.getLong(FST_S22_POPULATIONID) == gdr.getCallSetIds().size() /* the only non-singleton group */).findFirst();
             				for (int i=0; i<populations.size(); i++) {
             					Document pop = populations.get(i);
-	        					int sampleSize = pop.getInteger(FST_RES_SAMPLESIZE);
-	        					if (sampleSize == 1) {
-	    	        				Double[] variantFst = calculateVariantFst(variantResult, Arrays.asList(nonSingletonPops.get(0), pop));
+	        					if (pop.getLong(FST_S22_POPULATIONID) != nonSingletonPop.get().getLong(FST_S22_POPULATIONID)) {
+	    	        				Double[] variantFst = calculateVariantFst(variantResult, Arrays.asList(nonSingletonPop.get(), pop));
 	    							windowWeightedFstSums[i] += variantFst[0];
 	    							windowFstWeights[i] += variantFst[1];
 	            				}
 	        				}
+            				
+            				System.err.println(windowWeightedFstSums);
             				
 //            				TODO: fill-in result object for this case
         				}
@@ -372,6 +368,7 @@ public class VisualizationService {
 							windowFstWeights[0] += variantFst[1];
         				}
         				nComparisonIndex++;
+        				nTotalTreatedVariantCount.incrementAndGet();
         			}
 
         			result.put(rangeMin + (chunkIndex*intervalSize), windowWeightedFstSums[0] / windowFstWeights[0]);
