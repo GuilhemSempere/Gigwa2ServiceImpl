@@ -270,7 +270,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         this.nTotalVariantCount = Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         if (this.nTotalVariantCount == 1)
         {
-            MgdbDao.prepareDatabaseForSearches(mongoTemplate);    // list does not exist: create it
+            MgdbDao.prepareDatabaseForSearches(sModule);    // list does not exist: create it
             this.nTotalVariantCount = Helper.estimDocCount(mongoTemplate,MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         }
         this.taggedVariantList = mongoTemplate.findAll(Map.class, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS);
