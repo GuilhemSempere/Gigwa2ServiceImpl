@@ -97,11 +97,17 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     
     /** The missing data maxinmum threshold. */
     private Float[] maxMissingData = new Float[2];
+
+    /** The heterozygosity mininmum threshold. */
+    private Float[] minHeZ = new Float[2];
     
-    /** The minmaf. */
+    /** The heterozygosity maxinmum threshold. */
+    private Float[] maxHeZ = new Float[2];
+    
+    /** The MAF minimum threshold. */
     private Float[] minmaf = new Float[2];
     
-    /** The maxmaf. */
+    /** The MAF maximum threshold. */
     private Float[] maxmaf = new Float[2];
     
     boolean fDiscriminate = false;
@@ -147,7 +153,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static final public String AGGREGATION_QUERY_NEGATION_SUFFIX = "_NEG_";    // used to indicate that the match operator should be negated in the aggregation query
     
     /** The Constant AGGREGATION_QUERY_WITHOUT_ABNORMAL_HETEROZYGOSITY. */
-    static final public String AGGREGATION_QUERY_WITHOUT_ABNORMAL_HETEROZYGOSITY = "WITHOUT_ABNORMAL_HETEROZYGOSITY";
+    static final public String ___AGGREGATION_QUERY_WITHOUT_ABNORMAL_HETEROZYGOSITY = "WITHOUT_ABNORMAL_HETEROZYGOSITY";
 
     /** The Constant GENOTYPE_CODE_LABEL_ALL. */
     static final public String GENOTYPE_CODE_LABEL_ALL = "Any";
@@ -177,13 +183,13 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static final public String GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR = "Some Homozygous Var";
 
     /** The Constant GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS. */
-    static final public String GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS = "All Heterozygous";
+    static final public String ___GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS = "All Heterozygous";
 
     /** The Constant GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS. */
-    static final public String GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS = "Some Heterozygous";
+    static final public String ___GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS = "Some Heterozygous";
 
     /** The Constant GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY. */
-    static final public String GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY = "Without abnormal heterozygosity";
+    static final public String ___GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY = "Without abnormal heterozygosity";
 
     /** The Constant genotypePatternToDescriptionMap. */
     static final private HashMap<String, String> genotypePatternToDescriptionMap = new LinkedHashMap<String, String>();
@@ -192,7 +198,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static final private HashMap<String, String> genotypePatternToQueryMap = new HashMap<String, String>();
 
     static public final String MAIN_RESULT_PROJECTION_FIELD = "r";
-    static public final String MOSTLY_SAME_GENOTYPE_RESULT_PROJECTION_FIELD = "r2";
 
     static
     {
@@ -205,9 +210,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         genotypePatternToDescriptionMap.put(GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will return variants where where at least one selected individual is homozygous with the reference allele");
         genotypePatternToDescriptionMap.put(GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will return variants where selected individuals are all homozygous with an alternate allele");
         genotypePatternToDescriptionMap.put(GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will return variants where at least one selected individual is homozygous with an alternate allele");
-        genotypePatternToDescriptionMap.put(GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS, "This will return variants where selected individuals are all heterozygous");
-        genotypePatternToDescriptionMap.put(GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS, "This will return variants where at least one selected individual is heterozygous");
-        genotypePatternToDescriptionMap.put(GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY, "This will exclude variants where some alleles are found only in heterozygous genotypes (only for diploid, bi-allelic data)");
         genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_ALL, null);
         genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_MOSTLY_SAME, "$eq");
         genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "$eq" + GenotypingDataQueryBuilder.AGGREGATION_QUERY_NEGATION_SUFFIX);
@@ -217,9 +219,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + GenotypingDataQueryBuilder.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
         genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + GenotypingDataQueryBuilder.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
         genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + GenotypingDataQueryBuilder.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
-        genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS, "([0-9])([0-9])*(/(?!\\1))+([0-9])*"/*|^$"*/ + GenotypingDataQueryBuilder.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
-        genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS, "([0-9])([0-9])*(/(?!\\1))+([0-9])*"/*|^$"*/ + GenotypingDataQueryBuilder.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
-        genotypePatternToQueryMap.put(GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY, GenotypingDataQueryBuilder.AGGREGATION_QUERY_WITHOUT_ABNORMAL_HETEROZYGOSITY);
     }
 
     public GenotypingDataQueryBuilder(GigwaSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
@@ -248,6 +247,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         this.annotationFieldThresholds[0] = gsvr.getAnnotationFieldThresholds();
         this.minMissingData[0] = gsvr.getMinMissingData();
         this.maxMissingData[0] = gsvr.getMaxMissingData();
+        this.minHeZ[0] = gsvr.getMinHeZ();
+        this.maxHeZ[0] = gsvr.getMaxHeZ();
         this.minmaf[0] = gsvr.getMinMaf();
         this.maxmaf[0] = gsvr.getMaxMaf();
         final AtomicInteger nSampleCount = new AtomicInteger(0);
@@ -264,6 +265,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             this.annotationFieldThresholds[1] = gsvr.getAnnotationFieldThresholds2();
             this.minMissingData[1] = gsvr.getMinMissingData2();
             this.maxMissingData[1] = gsvr.getMaxMissingData2();
+            this.minHeZ[1] = gsvr.getMinHeZ2();
+            this.maxHeZ[1] = gsvr.getMaxHeZ2();
             this.minmaf[1] = gsvr.getMinMaf2();
             this.maxmaf[1] = gsvr.getMaxMaf2();
             this.individualToSampleListMap[1] = MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals[1]);
@@ -428,17 +431,17 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             orList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", runsToRestrictQueryTo)));
 
             if (!annotationMatchList.isEmpty())
-                orList.add(new BasicDBObject("$and", annotationMatchList));  // we do the annotation match here first, in case they would be in different run records than those that have the genotypes we want (FIXME: functional annnotations should go to VariantData)
+                orList.add(new BasicDBObject("$and", annotationMatchList));  // we do the annotation match here first, in case they would be in different run records than those that have the genotypes we want (FIXME: functional annotations should go to VariantData)
 
             pipeline.add(new BasicDBObject("$match", orList.size() == 1 ? orList.get(0) : new BasicDBObject("$or", orList)));
         }
           
         boolean[] fZygosityRegex = new boolean[2];
-        boolean[] fIsWithoutAbnormalHeterozygosityQuery = new boolean[2];
         boolean[] fNegateMatch = new boolean[2];
         boolean[] fOr = new boolean[2];
         boolean[] fMafApplied = new boolean[2];
         boolean[] fMissingDataApplied = new boolean[2];
+        boolean[] fHezRatioApplied = new boolean[2];
         boolean[] fCompareBetweenGenotypes = new boolean[2];
         String[] cleanOperator = new String[2];
 
@@ -458,10 +461,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     fOr[g] = true;
                     cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX.length());
                 }
-                else if (cleanOperator[g].equals(AGGREGATION_QUERY_WITHOUT_ABNORMAL_HETEROZYGOSITY)) {
-                    fIsWithoutAbnormalHeterozygosityQuery[g] = true;
-                    cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - AGGREGATION_QUERY_WITHOUT_ABNORMAL_HETEROZYGOSITY.length());
-                }
+                else
+                	LOG.error("Unknown filter operator: " + cleanOperator[g]);
             }
 
             int nMaxNumberOfAllelesForOneVariant = maxAlleleCount > 0 ? maxAlleleCount : genotypingProject.getAlleleCounts().last(), nPloidy = genotypingProject.getPloidyLevel();
@@ -482,7 +483,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 }
             }
 
-            fCompareBetweenGenotypes[g] = cleanOperator[g] != null && !fZygosityRegex[g] && !fIsWithoutAbnormalHeterozygosityQuery[g];
+            fCompareBetweenGenotypes[g] = cleanOperator[g] != null && !fZygosityRegex[g]/* && !fIsWithoutAbnormalHeterozygosityQuery[g]*/;
             if ("$ne".equals(cleanOperator[g]) && fNegateMatch[g]) {
                 if (selectedIndividuals[g].size() - maxMissingGenotypeCount > nNumberOfPossibleGenotypes) {
                     fCompareBetweenGenotypes[g] = false;    // we know applying this filter would not affect the query
@@ -493,8 +494,28 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             
             fMafApplied[g] = maxmaf[g] != null && maxmaf[g].floatValue() < 50F || minmaf[g] != null && minmaf[g].floatValue() > 0.0F;
             fMissingDataApplied[g] = (minMissingData[g] != null && minMissingData[g] > 0) || (maxMissingData[g] != null && maxMissingData[g] < 100);
+            fHezRatioApplied[g] = (minHeZ[g] != null && minHeZ[g] > 0) || (maxHeZ[g] != null && maxHeZ[g] < 100);
+            
+            if (minHeZ[g] != null && minHeZ[g] > 0 && fZygosityRegex[g]) {
+            	if (fOr[g]) {	// check if it's possible to have any homozygous genotypes based on selected heterozygosity and missing data rates
+            		double minMissing = !fMissingDataApplied[g] ? 0 : Math.ceil(minMissingData[g] * selectedIndividuals[g].size() / 100);
+            		double minNonHomoZ = Math.ceil((minHeZ[g]) * (selectedIndividuals[g].size() * (1 - (!fMissingDataApplied[g] ? 0 : minMissingData[g]) / 100f)) / 100);
+            		if (minNonHomoZ + minMissing >= selectedIndividuals[g].size()) {
+            			initialMatchList.add(new BasicDBObject("_id", null));    // return no results
+                        if (nNextCallCount == 1)
+                            LOG.info("Aborting incompatible heterozygous / homozygous filters (no space for any homozygous)");
+                        return pipeline;
+            		}
+            	}
+            	else {
+        			initialMatchList.add(new BasicDBObject("_id", null));    // return no results
+                    if (nNextCallCount == 1)
+                        LOG.info("Aborting incompatible heterozygous / homozygous filters (no space for any heterozygous)");
+                    return pipeline;
+        		}
+            }
         }
-        
+
         if (variantQueryDBList.size() > 0 && !fFilteringOnSequence)
             initialMatchList.addAll(variantQueryDBList);    // more efficient if added after chunking bit in this case
         
@@ -509,7 +530,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
        
         for (int g : filteredGroups) {
             boolean fMostSameSelected = "$eq".equals(cleanOperator[g]) && !fNegateMatch[g];
-            boolean fNeedGtArray = fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fZygosityRegex[g] || fIsWithoutAbnormalHeterozygosityQuery[g] || fCompareBetweenGenotypes[g] || fDiscriminate; // the only case when it's not needed is when we're only filtering on gene name or effect
+            boolean fNeedGtArray = fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fZygosityRegex[g] || fHezRatioApplied[g] /*|| fIsWithoutAbnormalHeterozygosityQuery[g]*/ || fCompareBetweenGenotypes[g] || fDiscriminate; // the only case when it's not needed is when we're only filtering on gene name or effect
 
             List<Object> currentGroupGtArray = new ArrayList<>();
 
@@ -583,7 +604,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 in.put("a" + g, new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", inObj))));
             }
 
-            if (fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || (cleanOperator[g] != null && !fZygosityRegex[g] && !fIsWithoutAbnormalHeterozygosityQuery[g]) || fDiscriminate) { //  number of missing genotypes in selected population
+            if (fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fHezRatioApplied[g] || (cleanOperator[g] != null && !fZygosityRegex[g] /*&& !fIsWithoutAbnormalHeterozygosityQuery[g]*/) || fDiscriminate) { //  number of missing genotypes in selected population
                 if (fIsMultiRunProject)
                     in.put("m" + g, new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$abs", new BasicDBObject("$cmp", new Object[] {new BasicDBObject("$size", "$$g"), 1}))))));
                 else// if (existingGenotypeCountList.size() > 0)
@@ -596,7 +617,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 filter.put("cond", fIsMultiRunProject ? new BasicDBObject("$eq", Arrays.asList(new BasicDBObject("$size", "$$gt"), 1)) : new BasicDBObject("$ne", Arrays.asList("$$gt", null)));
                 in.put("dc" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter)));
             }
-            if (fZygosityRegex[g] || fIsWithoutAbnormalHeterozygosityQuery[g] || fMostSameSelected || fDiscriminate) {    //  distinct non-missing genotypes in selected population (zygosity comparison)
+
+            if (fZygosityRegex[g] /*|| fIsWithoutAbnormalHeterozygosityQuery[g] */|| fMostSameSelected || fDiscriminate) {    //  distinct non-missing genotypes in selected population (zygosity comparison)
                 if (fMostSameSelected || fDiscriminate)
                     in.put("gt" + g, "$$gt" + g);    //  complete list of genotypes in selected population (all same)
 
@@ -612,31 +634,47 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 	missingDataFilter.put("$gte", selectedIndividuals[g].size() * minMissingData[g] / 100);
                 if (maxMissingData[g] != null && maxMissingData[g] < 100)
                 	missingDataFilter.put("$lte", selectedIndividuals[g].size() * maxMissingData[g] / 100);
-                finalMatchList.add(new BasicDBObject("r.m" + g, missingDataFilter));
+                finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m" + g, missingDataFilter));
             }
-                
-            if (fZygosityRegex[g] || fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fCompareBetweenGenotypes[g] || fIsWithoutAbnormalHeterozygosityQuery[g] || fMostSameSelected || fDiscriminate) {    // we need to calculate extra fields via an additional $let operator
+
+            if (fHezRatioApplied[g]) {    // heterozygosity ratio
+                BasicDBObject filter = new BasicDBObject("input", !fIsMultiRunProject ? "$$gt" + g : new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$arrayElemAt", Arrays.asList("$$g", 0)))));
+                filter.put("as", "gt");
+                filter.put("cond", new BasicDBObject("$and", Arrays.asList(new BasicDBObject("$ne", Arrays.asList("$$gt", null)), new BasicDBObject("$not", new BasicDBObject("$regexMatch", new BasicDBObject("input", "$$gt").append("regex", "^([0-9]+)(\\/\\1)*$"))))));
+                in.put("he" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter))); // heterozygous genotype count
+
+            	BasicDBObject hzFilter = new BasicDBObject();
+                if (minHeZ[g] != null && minHeZ[g] > 0)
+                	hzFilter.put("$gte", minHeZ[g]);
+                if (maxHeZ[g] != null && maxHeZ[g] < 100)
+                	hzFilter.put("$lte", maxHeZ[g]);
+                finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".hef" + g, hzFilter));
+            }
+
+            if (fZygosityRegex[g] || fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fCompareBetweenGenotypes[g] || fHezRatioApplied[g] /*|| fIsWithoutAbnormalHeterozygosityQuery[g]*/ || fMostSameSelected || fDiscriminate) {    // we need to calculate extra fields via an additional $let operator
                 // keep previously computed fields
-                if (fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || (fCompareBetweenGenotypes[g]) || fDiscriminate)
+                if (fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || (fCompareBetweenGenotypes[g]) || fHezRatioApplied[g] || fDiscriminate)
                     subIn.put("m" + g, "$$m" + g);
                 if (fZygosityRegex[g] || fMostSameSelected || fDiscriminate)
                     subIn.put("d" + g, "$$d" + g);
                 if (fCompareBetweenGenotypes[g] && !fMostSameSelected)
                     subIn.put("dc" + g, "$$dc" + g);
+                if (fHezRatioApplied[g])
+                    subIn.put("he" + g, "$$he" + g);
 
                 if (fCompareBetweenGenotypes[g] && !fMostSameSelected)
                 {    // dm = d + m
                      subIn.put("dm" + g, new BasicDBObject("$add", new Object[] {"$$dc" + g, "$$m" + g}));
                      
-                     finalMatchList.add(new BasicDBObject("r.m" + g, new BasicDBObject("$lt", selectedIndividuals[g].size() - 1)));    // if only one individual's genotype is not treated as missing then the filter makes no more sense
+                     finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m" + g, new BasicDBObject("$lt", selectedIndividuals[g].size() - 1)));    // if only one individual's genotype is not treated as missing then the filter makes no more sense
                      if ("$eq".equals(cleanOperator[g]) && fNegateMatch[g])
-                            finalMatchList.add(new BasicDBObject("r.dc" + g, new BasicDBObject("$ne" /*not all same*/, 1)));
+                            finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dc" + g, new BasicDBObject("$ne" /*not all same*/, 1)));
                      else if ("$ne".equals(cleanOperator[g]))
-                         finalMatchList.add(new BasicDBObject("r.dm" + g, new BasicDBObject(fNegateMatch[g] ? "$lt" /*not all different*/ : "$eq" /*all different*/, selectedIndividuals[g].size())));
+                         finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dm" + g, new BasicDBObject(fNegateMatch[g] ? "$lt" /*not all different*/ : "$eq" /*all different*/, selectedIndividuals[g].size())));
                      else
                          LOG.error("Invalid operator: " + operator);
                 }
-                
+
                 if (fMafApplied[g]) {    // allele frequency
                     BasicDBList condList = new BasicDBList(), divideList = new BasicDBList();
                     condList.add(new BasicDBObject("$eq", new Object[] {"$$m" + g, selectedIndividuals[g].size()}));
@@ -649,81 +687,41 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     
                     BasicDBList orMafMatch = new BasicDBList();
                     BasicDBList andMafMatch = new BasicDBList();
-                    andMafMatch.add(new BasicDBObject("r.f" + g, new BasicDBObject("$gte", minmaf[g])));
-                    andMafMatch.add(new BasicDBObject("r.f" + g, new BasicDBObject("$lte", maxmaf[g])));
+                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", minmaf[g])));
+                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", maxmaf[g])));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
                     andMafMatch = new BasicDBList();
-                    andMafMatch.add(new BasicDBObject("r.f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf[g].floatValue()))));
-                    andMafMatch.add(new BasicDBObject("r.f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf[g].floatValue()))));
+                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf[g].floatValue()))));
+                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf[g].floatValue()))));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
                     finalMatchList.add(new BasicDBObject("$or", orMafMatch));
-                }
-                
-                if (fIsWithoutAbnormalHeterozygosityQuery[g]) {    // counts for HZ, HR and HV genotypes
-                    BasicDBObject filter = new BasicDBObject("input", "$$d" + g);
-                    filter.put("as", "gt");
-                    filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$gt", "0/1")));
-                    subIn.put("hz" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter)));
-                    
-                    filter = new BasicDBObject("input", "$$d" + g);
-                    filter.put("as", "gt");
-                    filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$gt", "0/0")));
-                    subIn.put("hr" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter)));
-                    
-                    filter = new BasicDBObject("input", "$$d" + g);
-                    filter.put("as", "gt");
-                    filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$gt", "1/1")));
-                    subIn.put("hv" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter)));
                 }
             }
 
             if (cleanOperator[g] != null || fDiscriminate) {
                 if (selectedIndividuals[g].size() >= 1) {
                     if (fZygosityRegex[g]) {    // query to match specific genotype code with zygosity regex (homozygous var, homozygous ref, heterozygous)
-                        BasicDBList orSelectedGenotypeRegexAndFieldExistList = new BasicDBList();
-                        BasicDBObject orFinalSelectedGenotypeRegexAndFieldExist = new BasicDBObject();
-                        BasicDBObject andFinalSelectedGenotypeRegexAndFieldExist = new BasicDBObject();
+                        BasicDBList atLeastOneSelectedGenotypeRegexAndFieldExistList = new BasicDBList();
+                        BasicDBObject atLeastOneFinalSelectedGenotypeRegexAndFieldExist = new BasicDBObject();
+                        BasicDBObject allFinalSelectedGenotypeRegexAndFieldExist = new BasicDBObject();
                     
                         for (int j=0; j<selectedIndividuals[g].size(); j++) {
-                            /* FIXME: we can probably support heterozygous multiple-digit-genotypes using {$not : /^([0-9]+)(\/\1)*$/} */
-                            if (fOr[g]) {    // at least one whatever
-                                orSelectedGenotypeRegexAndFieldExistList.add(new BasicDBObject("r.d" + g + "." + j, new BasicDBObject("$regex", cleanOperator[g])));
+                            if (fOr[g]) { // at least one homozygous
+                                atLeastOneSelectedGenotypeRegexAndFieldExistList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".d" + g + "." + j, new BasicDBObject("$regex", cleanOperator[g])));
                             }
-                            else if (!genotypePatternToQueryMap.get(GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS).startsWith(cleanOperator[g])) {    // all homozygous whatever
-                                orSelectedGenotypeRegexAndFieldExistList.add(new BasicDBObject("r.d" + g + "." + j, new BasicDBObject(j == 0 ? "$regex" : "$exists", j == 0 ? cleanOperator[g] : false)));
-                            }
-                            else  {    // all heterozygous
-                                if (j == 0)
-                                    orSelectedGenotypeRegexAndFieldExistList.add(new BasicDBObject("r.d" + g + "." + j, new BasicDBObject("$regex", cleanOperator[g])));
-                                else
-                                {
-                                    BasicDBList orList = new BasicDBList();
-                                    BasicDBObject clause1 = new BasicDBObject("r.d" + g + "." + j, new BasicDBObject("$exists", false));
-                                    BasicDBObject clause2 = new BasicDBObject("r.d" + g + "." + j, new BasicDBObject("$regex", cleanOperator[g]));
-                                    orList.add(clause1);
-                                    orList.add(clause2);
-                                    orSelectedGenotypeRegexAndFieldExistList.add(new BasicDBObject("$or", orList));
-                                }
+                            else if (j <= 1) { // all homozygous
+                                atLeastOneSelectedGenotypeRegexAndFieldExistList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".d" + g + "." + j, new BasicDBObject(j == 0 ? "$regex" : "$exists", j == 0 ? cleanOperator[g] : false)));
                             }
                         }
 
                         if (fOr[g]) {        
-                            orFinalSelectedGenotypeRegexAndFieldExist.put("$or", orSelectedGenotypeRegexAndFieldExistList);
-                            finalMatchList.add(orFinalSelectedGenotypeRegexAndFieldExist);
+                            atLeastOneFinalSelectedGenotypeRegexAndFieldExist.put("$or", atLeastOneSelectedGenotypeRegexAndFieldExistList);
+                            finalMatchList.add(atLeastOneFinalSelectedGenotypeRegexAndFieldExist);
                         }            
                         else {
-                            andFinalSelectedGenotypeRegexAndFieldExist.put("$and", orSelectedGenotypeRegexAndFieldExistList);
-                            finalMatchList.add(andFinalSelectedGenotypeRegexAndFieldExist);
+                            allFinalSelectedGenotypeRegexAndFieldExist.put("$and", atLeastOneSelectedGenotypeRegexAndFieldExistList);
+                            finalMatchList.add(allFinalSelectedGenotypeRegexAndFieldExist);
                         }
-                    }
-                    else if (fIsWithoutAbnormalHeterozygosityQuery[g]) {    // only for bi-allelic, diploid data: query that requires every allele present in heterozygous genotypes to be also present in homozygous ones
-                        BasicDBList orList = new BasicDBList();
-                        orList.add(new BasicDBObject("r.hz" + g, new BasicDBObject("$eq", 0)));
-                        BasicDBList andList = new BasicDBList();
-                        andList.add(new BasicDBObject("r.hv" + g, new BasicDBObject("$gt", 0)));
-                        andList.add(new BasicDBObject("r.hr" + g, new BasicDBObject("$gt", 0)));
-                        orList.add(new BasicDBObject("$and", andList));
-                        finalMatchList.add(new BasicDBObject("$or", orList));
                     }
 
                     if (fMostSameSelected || fDiscriminate) {
@@ -745,13 +743,21 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                                 new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$r.d" + 0, new BasicDBObject("$indexOfArray", Arrays.asList("$r.c" + 0, "$$dgc" + 0)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$r.d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$r.c" + g, "$$dgc" + g))))))
                             )));
 
-                            finalMatchList.add(new BasicDBObject("r2.dd", true));
+                            finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dd", true));
                         }
 
                         if (fMostSameSelected)
-                            finalMatchList.add(new BasicDBObject("r2.ed" + g, true));
+                            finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".ed" + g, true));
                     }
                 }
+            }
+            
+            if (fHezRatioApplied[g]) {
+                BasicDBList condList = new BasicDBList();
+                condList.add(new BasicDBObject("$eq", new Object[] {"$r.m" + g, selectedIndividuals[g].size()}));
+                condList.add(0);
+                condList.add(new BasicDBObject("$divide", Arrays.asList(new BasicDBObject("$multiply", new Object[] {"$r.he" + g, 100}), new BasicDBObject("$subtract", new Object[] {selectedIndividuals[g].size(), "$r.m" + g}))));
+                addFieldsIn.put("hef" + g, new BasicDBObject("$cond", condList)); // heterozygous frequency
             }
 
             vars.put("gt" + g, currentGroupGtArray);
@@ -786,15 +792,15 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (addFieldsIn.size() > 0) {
             BasicDBObject addFieldsLet = new BasicDBObject("vars", addFieldsVars);
             addFieldsLet.put("in", addFieldsIn);
-            pipeline.add(new BasicDBObject("$addFields", new BasicDBObject(MOSTLY_SAME_GENOTYPE_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", addFieldsLet))));
+            pipeline.add(new BasicDBObject("$addFields", new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", addFieldsLet))));
         }
 
         if (fExcludeVariantsWithOnlyMissingData) {  // not all runs are selected: some variants may have no data for the selected samples, we don't want to include them
             ArrayList<BasicDBObject> orList = new ArrayList<BasicDBObject>();
             if (maxMissingData[0] == 100)
-                orList.add(new BasicDBObject("r.m0", new BasicDBObject("$lt", selectedIndividuals[0].size())));
+                orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m0", new BasicDBObject("$lt", selectedIndividuals[0].size())));
             if (filteredGroups.contains(1) && maxMissingData[1] == 100)
-                orList.add(new BasicDBObject("r.m1", new BasicDBObject("$lt", selectedIndividuals[1].size())));
+                orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m1", new BasicDBObject("$lt", selectedIndividuals[1].size())));
             if (!orList.isEmpty())
                 finalMatchList.add(new BasicDBObject("$or", orList));
         }
@@ -803,7 +809,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
 //        if (nNextCallCount == 1) {
-//            try { System.out.println(new ObjectMapper().writeValueAsString(pipeline)); }
+//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
 //            catch (Exception ignored) {}
 //        }
         return pipeline;
@@ -913,9 +919,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static public List<Integer> getGroupsForWhichToFilterOnGenotypingData(GigwaSearchVariantsRequest gsvr, boolean fConsiderFieldThresholds)
     {
         List<Integer> result = new ArrayList<>();
-        if (gsvr.isDiscriminate() || !gsvr.getGtPattern().equals(GENOTYPE_CODE_LABEL_ALL) || (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) || gsvr.getMinMissingData() > 0 || gsvr.getMaxMissingData() < 100 || gsvr.getMinMaf() > 0 || gsvr.getMaxMaf() < 50)
+        if (gsvr.isDiscriminate() || !gsvr.getGtPattern().equals(GENOTYPE_CODE_LABEL_ALL) || (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) || gsvr.getMinHeZ() > 0 || gsvr.getMinHeZ() < 100 || gsvr.getMinMissingData() > 0 || gsvr.getMaxMissingData() < 100 || gsvr.getMinMaf() > 0 || gsvr.getMaxMaf() < 50)
             result.add(0);
-        if (gsvr.isDiscriminate() || !gsvr.getGtPattern2().equals(GENOTYPE_CODE_LABEL_ALL) || (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds2().size() >= 1) || gsvr.getMinMissingData2() > 0 || gsvr.getMaxMissingData2() < 100 || gsvr.getMinMaf2() > 0 || gsvr.getMaxMaf2() < 50)
+        if (gsvr.isDiscriminate() || !gsvr.getGtPattern2().equals(GENOTYPE_CODE_LABEL_ALL) || (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds2().size() >= 1) || gsvr.getMinHeZ2() > 0 || gsvr.getMinHeZ2() < 100 || gsvr.getMinMissingData2() > 0 || gsvr.getMaxMissingData2() < 100 || gsvr.getMinMaf2() > 0 || gsvr.getMaxMaf2() < 50)
             result.add(1);
 
         return result;

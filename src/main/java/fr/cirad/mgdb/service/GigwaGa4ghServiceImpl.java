@@ -1373,6 +1373,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getMostSameRatio() + ":"
                         + gsvr.getMinMissingData() + ":"
                         + gsvr.getMaxMissingData() + ":"
+                        + gsvr.getMinHeZ() + ":"
+                        + gsvr.getMaxHeZ() + ":"
                         + gsvr.getMinMaf() + ":"
                         + gsvr.getMaxMaf() + ":"
 
@@ -1382,6 +1384,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getMostSameRatio2() + ":"
                         + gsvr.getMinMissingData2() + ":"
                         + gsvr.getMaxMissingData2() + ":"
+                        + gsvr.getMinHeZ2() + ":"
+                        + gsvr.getMaxHeZ2() + ":"
                         + gsvr.getMinMaf2() + ":"
                         + gsvr.getMaxMaf2() + ":"
 
