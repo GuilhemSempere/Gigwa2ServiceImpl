@@ -5,8 +5,8 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
-        <project.version>2.5.2-alpha</project.version>
-        <mgdb2_export.version>2.5.2-alpha</mgdb2_export.version>
+        <project.version>3.0-SNAPSHOT</project.version>
+        <mgdb2_export.version>3.0-SNAPSHOT</mgdb2_export.version>
     </properties>
 
     <groupId>fr.cirad</groupId>
