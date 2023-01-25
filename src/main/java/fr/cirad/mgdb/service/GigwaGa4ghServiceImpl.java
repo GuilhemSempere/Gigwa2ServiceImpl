@@ -212,6 +212,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Autowired private MgdbDao mgdbDao;
 
     public static final Integer QUERY_IDS_CHUNK_SIZE = 100000;
+    
+    private static ThreadLocal<Integer> threadAssembly = new ThreadLocal<Integer>();
 
     /**
      * number format instance
@@ -225,6 +227,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         annotationField.put(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + 2, "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + 2);
         annotationField.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + 1, "$" + VariantRunData.SECTION_ADDITIONAL_INFO);
     }
+    
+	public static Integer getThreadAssembly() {
+		return threadAssembly.get();
+	}
+
+	public static String getThreadAssemblyPath() {
+		return threadAssembly.get() != null ? "." + threadAssembly.get() : "";
+	}
+
+	public static void setThreadAssembly(Integer threadAssembly) {
+		GigwaGa4ghServiceImpl.threadAssembly.set(threadAssembly);
+	}
 
     public boolean isAggregationAllowedToUseDisk() {
         if (appConfig==null) { //We are probably in unit test case
