@@ -116,6 +116,7 @@ import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExpo
 import fr.cirad.mgdb.exporting.markeroriented.AbstractMarkerOrientedExportHandler;
 import fr.cirad.mgdb.importing.SequenceImport;
 import fr.cirad.mgdb.importing.VcfImport;
+import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
 import fr.cirad.mgdb.model.mongo.maintypes.CachedCount;
 import fr.cirad.mgdb.model.mongo.maintypes.DBVCFHeader;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
@@ -217,6 +218,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * number format instance
      */
     static protected NumberFormat nf = NumberFormat.getInstance();
+    
+    private static ThreadLocal<Integer> threadAssembly = new ThreadLocal<Integer>();
 
     static {
         nf.setMaximumFractionDigits(4);
@@ -474,11 +477,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
            q.addCriteria(Criteria.where("_id").is(projId));
         GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
 
-        int nSelectedSeqCount = gsvr.getReferenceName() == null || gsvr.getReferenceName().length() == 0 ? proj.getSequences().size() : gsvr.getReferenceName().split(";").length;
+        int nSelectedSeqCount = gsvr.getReferenceName() == null || gsvr.getReferenceName().length() == 0 ? proj.getContigs(getThreadAssembly()).size() : gsvr.getReferenceName().split(";").length;
         if (nSelectedSeqCount == 1)
             return null;    // we can't expect user to select less than a single sequence
 
-        int nAvgVariantsPerSeq = (int) (mongoTemplate.count(new Query(), VariantData.class) / Math.max(1, proj.getSequences().size()));
+        int nAvgVariantsPerSeq = (int) (mongoTemplate.count(new Query(), VariantData.class) / Math.max(1, proj.getContigs(getThreadAssembly()).size()));
         BigInteger maxSeqCount = BigInteger.valueOf(1000000000).multiply(BigInteger.valueOf(nMaxBillionGenotypesInvolved)).divide(BigInteger.valueOf(nAvgVariantsPerSeq).multiply(BigInteger.valueOf(nIndCount)));
         int nMaxSeqCount = Math.max(1, maxSeqCount.intValue());
 
@@ -1164,12 +1167,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             try {
                                 progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
                                 progress.moveToNextStep();    // done with identifying variants
-                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, nTempVarCount == 0 ? null : usedVarCollName, variantQuery, count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
+                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, getThreadAssembly(), nTempVarCount == 0 ? null : usedVarCollName, variantQuery, count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
                                 progress.moveToNextStep();
-                                individualOrientedExportHandler.exportData(finalOS, sModule, AbstractTokenManager.getUserNameFromAuthentication(auth), exportFiles, true, progress, usedVarCollName, variantQuery, count, null, gsver.getMetadataFields(), readyToExportFiles);
+                                individualOrientedExportHandler.exportData(finalOS, sModule, getThreadAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportFiles, true, progress, usedVarCollName, variantQuery, count, null, gsver.getMetadataFields(), readyToExportFiles);
                                 if (!progress.isAborted()) {
                                     LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                     progress.markAsComplete();
@@ -1215,7 +1218,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 Thread exportThread = new IExportHandler.SessionAttributeAwareExportThread(gsver.getRequest().getSession()) {
                     public void run() {
                         try {
-                            markerOrientedExportHandler.exportData(finalOS, sModule, AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarColl.getNamespace().getCollectionName(), variantQuery, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
+                            markerOrientedExportHandler.exportData(finalOS, sModule, getThreadAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarColl.getNamespace().getCollectionName(), variantQuery, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                 progress.markAsComplete();
@@ -1395,7 +1398,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public List<String> getProjectSequences(String sModule, int projId) {
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         GenotypingProject proj = mongoTemplate.findById(projId, GenotypingProject.class);
-        return new ArrayList<String>(proj.getSequences());
+        return new ArrayList<String>(proj.getContigs(getThreadAssembly()));
     }
 
     /**
@@ -1569,7 +1572,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         while (genotypingDataCursor.hasNext())
         {
             Document variantObj = genotypingDataCursor.next();
-            String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, "; ");
+            String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, "; ", null);
             Variant var = varMap.get(varId);
             if (var == null /* should not happen! */|| variantsForWhichAnnotationWasRetrieved.contains(varId))
                 continue;
@@ -2029,14 +2032,30 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String taxon = MongoTemplateManager.getTaxonName(id);
             String species = MongoTemplateManager.getSpecies(id);
             String taxoDesc = (species != null ? "Species: " + species : "") + (taxon != null && !taxon.equals(species) ? "" : (species != null ? " ; " : "") + "Taxon: " + taxon);
+            String refCountDesc;
+            List<String> assemblies = new ArrayList<>();
+            MongoCollection<Document> projectColl = mongoTemplate.getCollection(mongoTemplate.getCollectionName(GenotypingProject.class));
+            if (mongoTemplate.getDb().getName().startsWith("mgdb2_"))
+                    refCountDesc = projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; ";
+            else {
+                    refCountDesc = "";
+                    for (Assembly assembly : mongoTemplate.findAll(Assembly.class)) {
+                            refCountDesc += (refCountDesc.isEmpty() ? "" : ", ") + projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES + "." + assembly.getId(), String.class).into(new ArrayList<>()).size() + " references (assembly \"" + assembly.getName() + "\")";
+                            assemblies.add(assembly.getName());
+                    }
+                    refCountDesc += " ; ";
+            }
+            
             referenceSet = ReferenceSet.newBuilder()
-                    .setId(id)
-                    .setName(id)
-                    .setMd5checksum(Helper.convertToMD5(concatId))
-                    .setSourceAccessions(list)
-                    .setNcbiTaxonId(MongoTemplateManager.getTaxonId(id))
-                    .setDescription((taxoDesc.isEmpty() ? "" : (taxoDesc + " ; ")) + mongoTemplate.getCollection(mongoTemplate.getCollectionName(GenotypingProject.class)).distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; " + mongoTemplate.count(new Query(), VariantData.class) + " markers")
-                    .build();
+                .setId(id)
+                .setName(id)
+                .setMd5checksum(Helper.convertToMD5(concatId))
+                .setSourceAccessions(list)
+                .setNcbiTaxonId(MongoTemplateManager.getTaxonId(id))
+                .setAssemblyId(assemblies.isEmpty() ? null : StringUtils.join(assemblies, ", "))
+//                        .setDescription((taxoDesc.isEmpty() ? "" : (taxoDesc + " ; ")) + mongoTemplate.getCollection(mongoTemplate.getCollectionName(GenotypingProject.class)).distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; " + mongoTemplate.count(new Query(), VariantData.class) + " markers")
+                .setDescription((taxoDesc.isEmpty() ? "" : (taxoDesc + " ; ")) + refCountDesc + mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantData.class)).estimatedDocumentCount() + " markers")
+                .build();
         }
         return referenceSet;
     }
@@ -2059,7 +2078,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
 
             GenotypingProject proj = mongoTemplate.findById(projId, GenotypingProject.class);
-            Set<String> listRef = proj.getSequences();
+            Set<String> listRef = proj.getContigs(getThreadAssembly());
 
             // check if the sequence is in the list
             if (listRef.contains(name)) {
@@ -2255,7 +2274,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         List<ReferenceSet> listRef = Collections.synchronizedList(new ArrayList<>());
         List<String> modulesToReturn = start != 0 || end != listModules.size() ? listModules.subList(start, end) : listModules;
 	    if (!modulesToReturn.isEmpty()) {
-	        List<Collection<String>> splitModuleCollections = Helper.evenlySplitCollection(modulesToReturn, Runtime.getRuntime().availableProcessors() * 2);
+	        List<ArrayList<String>> splitModuleCollections = Helper.evenlySplitCollection(modulesToReturn, Runtime.getRuntime().availableProcessors() * 2);
 	        ExecutorService executor = Executors.newFixedThreadPool(splitModuleCollections.size());
 	        for (int i=0; i<splitModuleCollections.size(); i++) {
 	            Collection<String> modules = splitModuleCollections.get(i);
@@ -2537,12 +2556,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 // listSequence.add((String) seq.get("_id"));
             } else {
                 Query q = new Query();
-                q.fields().include(GenotypingProject.FIELDNAME_SEQUENCES);
+//                q.fields().include(GenotypingProject.FIELDNAME_SEQUENCES);
                 if (projId != -1)
                     q.addCriteria(Criteria.where("_id").is(projId));
                 List<GenotypingProject> listProj = mongoTemplate.find(q, GenotypingProject.class);
                 for (int i = 0; i < listProj.size(); i++) {
-                    for (String seq : listProj.get(i).getSequences()) {
+                    for (String seq : listProj.get(i).getContigs(getThreadAssembly())) {
                         mapSeq.put(seq, i + 1);
                     }
                 }
@@ -2987,4 +3006,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return values;
     }
+
+	public static Integer getThreadAssembly() {
+		return threadAssembly.get();
+	}
+
+	public static void setThreadAssembly(Integer threadAssembly) {
+		GigwaGa4ghServiceImpl.threadAssembly.set(threadAssembly);
+	}
+
 }

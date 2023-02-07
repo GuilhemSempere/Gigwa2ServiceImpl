@@ -96,7 +96,7 @@ public class VisualizationService {
 		}
 		Document aggResult = (Document) cursor.next();
 		if (gsvdr.getDisplayedRangeMin() == null)
-			gsvdr.setDisplayedRangeMin((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; "));
+			gsvdr.setDisplayedRangeMin((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; ", null));
 
 		sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, -1));
 		cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).collation(IExportHandler.collationObj).iterator();
@@ -107,7 +107,7 @@ public class VisualizationService {
 		}
 		aggResult = (Document) cursor.next();
 		if (gsvdr.getDisplayedRangeMax() == null)
-			gsvdr.setDisplayedRangeMax((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; "));
+			gsvdr.setDisplayedRangeMax((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; ", null));
 		return true;
 	}
     
