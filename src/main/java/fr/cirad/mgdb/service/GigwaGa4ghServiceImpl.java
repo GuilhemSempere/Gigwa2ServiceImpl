@@ -693,14 +693,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                     for (Thread t : threadsToWaitFor) // wait for all threads before moving to next phase
                         if (t != null)
-                                t.join();
-                    progress.setCurrentStepProgress(100);
-
+                        	t.join();
+                    
                     count = 0l;
-                    for (Long partialCount : partialCountArray)
-                        count += partialCount;
-
-                    mongoTemplate.save(new CachedCount(queryKey, Arrays.asList(partialCountArray)));
+                    if (progress.getError() == null && !progress.isAborted()) {
+	                    progress.setCurrentStepProgress(100);
+	
+	                    for (Long partialCount : partialCountArray)
+	                        count += partialCount;
+	
+	                    mongoTemplate.save(new CachedCount(queryKey, Arrays.asList(partialCountArray)));
+                    }
                 }
                 catch (InterruptedException e) {
                     LOG.debug("InterruptedException", e);
@@ -709,10 +712,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             LOG.info("countVariants found " + count + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
         }
 
-        progress.markAsComplete();
-        if (progress.isAborted()) {
+        if (progress.getError() == null && !progress.isAborted())
             return 0l;
-        }
+
+        progress.markAsComplete();
         return count;
     }
 
@@ -993,7 +996,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                        if (t != null)
 	                            t.join();
 	
-	                    if (progress.getError() == null) {
+	                    if (progress.getError() == null && !progress.isAborted()) {
 	                        progress.setCurrentStepProgress(100);
 	
 	                        if (partialCountArrayToFill != null) {    // we don't have a count cache for this query: let's create it
@@ -2033,15 +2036,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String species = MongoTemplateManager.getSpecies(id);
             String taxoDesc = (species != null ? "Species: " + species : "") + (taxon != null && !taxon.equals(species) ? "" : (species != null ? " ; " : "") + "Taxon: " + taxon);
             String refCountDesc;
-            List<String> assemblies = new ArrayList<>();
+            List<Assembly> assemblies = mongoTemplate.findAll(Assembly.class);
+            List<String> assemblyNames = new ArrayList<>();
             MongoCollection<Document> projectColl = mongoTemplate.getCollection(mongoTemplate.getCollectionName(GenotypingProject.class));
-            if (mongoTemplate.getDb().getName().startsWith("mgdb2_"))
+            if (assemblies.isEmpty())
                     refCountDesc = projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; ";
             else {
                     refCountDesc = "";
-                    for (Assembly assembly : mongoTemplate.findAll(Assembly.class)) {
-                            refCountDesc += (refCountDesc.isEmpty() ? "" : ", ") + projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES + "." + assembly.getId(), String.class).into(new ArrayList<>()).size() + " references (assembly \"" + assembly.getName() + "\")";
-                            assemblies.add(assembly.getName());
+                    for (Assembly assembly : assemblies) {
+                        refCountDesc += (refCountDesc.isEmpty() ? "" : ", ") + projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES + "." + assembly.getId(), String.class).into(new ArrayList<>()).size() + " references (assembly \"" + assembly.getName() + "\")";
+                        assemblyNames.add(assembly.getName());
                     }
                     refCountDesc += " ; ";
             }
@@ -2052,7 +2056,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 .setMd5checksum(Helper.convertToMD5(concatId))
                 .setSourceAccessions(list)
                 .setNcbiTaxonId(MongoTemplateManager.getTaxonId(id))
-                .setAssemblyId(assemblies.isEmpty() ? null : StringUtils.join(assemblies, ", "))
+                .setAssemblyId(assemblyNames.isEmpty() ? null : StringUtils.join(assemblyNames, ", "))
 //                        .setDescription((taxoDesc.isEmpty() ? "" : (taxoDesc + " ; ")) + mongoTemplate.getCollection(mongoTemplate.getCollectionName(GenotypingProject.class)).distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; " + mongoTemplate.count(new Query(), VariantData.class) + " markers")
                 .setDescription((taxoDesc.isEmpty() ? "" : (taxoDesc + " ; ")) + refCountDesc + mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantData.class)).estimatedDocumentCount() + " markers")
                 .build();

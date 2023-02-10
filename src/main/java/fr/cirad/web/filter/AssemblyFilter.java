@@ -10,8 +10,12 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 
 import org.apache.log4j.Logger;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 
+import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
 import fr.cirad.mgdb.service.GigwaGa4ghServiceImpl;
+import fr.cirad.tools.mongo.MongoTemplateManager;
 
 /**
  * The Class AutoUnzipFilter.
@@ -37,12 +41,15 @@ public class AssemblyFilter implements javax.servlet.Filter {
 	{
 		if (request instanceof HttpServletRequest)
 		{
-			Integer assembly = null;
+
+			Integer assemblyId = null;
 			try {
-				assembly = Integer.parseInt(request.getParameter("assembly"));
+		        String assembly = ((HttpServletRequest) request).getHeader("assembly");
+		        assemblyId = assembly == null ? null : MongoTemplateManager.get(request.getParameter("module")).findOne(new Query(Criteria.where(Assembly.FIELDNAME_NAME).is(assembly)), Assembly.class).getId();
+//				assembly = Integer.parseInt(request.getParameter("assembly"));
 			}
 			catch (NumberFormatException ignored) {}
-			GigwaGa4ghServiceImpl.setThreadAssembly(assembly == null ? null : assembly);
+			GigwaGa4ghServiceImpl.setThreadAssembly(assemblyId);
 		}
 
 		fc.doFilter(request, response);
