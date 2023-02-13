@@ -2269,7 +2269,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         List<ReferenceSet> listRef = Collections.synchronizedList(new ArrayList<>());
         List<String> modulesToReturn = start != 0 || end != listModules.size() ? listModules.subList(start, end) : listModules;
 	    if (!modulesToReturn.isEmpty()) {
-	        List<Collection<String>> splitModuleCollections = Helper.evenlySplitCollection(modulesToReturn, Runtime.getRuntime().availableProcessors() * 2);
+	        List<ArrayList<String>> splitModuleCollections = Helper.evenlySplitCollection(modulesToReturn, Runtime.getRuntime().availableProcessors() * 2);
 	        ExecutorService executor = Executors.newFixedThreadPool(splitModuleCollections.size());
 	        for (int i=0; i<splitModuleCollections.size(); i++) {
 	            Collection<String> modules = splitModuleCollections.get(i);
