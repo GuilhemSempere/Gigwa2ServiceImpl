@@ -228,6 +228,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         annotationField.put(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + 2, "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + 2);
         annotationField.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + 1, "$" + VariantRunData.SECTION_ADDITIONAL_INFO);
     }
+    
+	public static Integer getThreadAssembly() {
+		return threadAssembly.get();
+	}
+
+	public static String getThreadAssemblyPath() {
+		return threadAssembly.get() != null ? "." + threadAssembly.get() : "";
+	}
+
+	public static void setThreadAssembly(Integer threadAssembly) {
+		GigwaGa4ghServiceImpl.threadAssembly.set(threadAssembly);
+	}
 
     public boolean isAggregationAllowedToUseDisk() {
         if (appConfig==null) { //We are probably in unit test case
@@ -1165,7 +1177,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (individualOrientedExportHandler != null)
             {
                 if (!progress.isAborted()) {
-                    Thread exportThread = new IExportHandler.SessionAttributeAwareExportThread(gsver.getRequest().getSession()) {
+                    Thread exportThread = new SessionAttributeAwareExportThread(gsver.getRequest().getSession()) {
                         public void run() {
                             try {
                                 progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
@@ -1218,7 +1230,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (contentType != null && contentType.trim().length() > 0)
                     response.setContentType(contentType);
 
-                Thread exportThread = new IExportHandler.SessionAttributeAwareExportThread(gsver.getRequest().getSession()) {
+                Thread exportThread = new SessionAttributeAwareExportThread(gsver.getRequest().getSession()) {
                     public void run() {
                         try {
                             markerOrientedExportHandler.exportData(finalOS, sModule, getThreadAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarColl.getNamespace().getCollectionName(), variantQuery, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
@@ -3010,13 +3022,5 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return values;
     }
-
-	public static Integer getThreadAssembly() {
-		return threadAssembly.get();
-	}
-
-	public static void setThreadAssembly(Integer threadAssembly) {
-		GigwaGa4ghServiceImpl.threadAssembly.set(threadAssembly);
-	}
 
 }
