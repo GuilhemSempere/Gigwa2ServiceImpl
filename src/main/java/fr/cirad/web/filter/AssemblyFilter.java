@@ -18,6 +18,7 @@
 package fr.cirad.web.filter;
 
 import java.io.IOException;
+import java.util.stream.Collectors;
 
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
@@ -58,15 +59,28 @@ public class AssemblyFilter implements javax.servlet.Filter {
 	{
 		if (request instanceof HttpServletRequest)
 		{
-
-			Integer assemblyId = null;
+			HttpServletRequest req = (HttpServletRequest) request;
+//			Integer assemblyId = null;
 			try {
-		        String assembly = ((HttpServletRequest) request).getHeader("assembly");
-		        assemblyId = assembly == null ? null : MongoTemplateManager.get(request.getParameter("module")).findOne(new Query(Criteria.where(Assembly.FIELDNAME_NAME).is(assembly)), Assembly.class).getId();
+//				String module = req.getParameter("module");
+		        String assembly = req.getHeader("assembly");
+//		        System.out.println(req.getRequestURI());
+//		        System.err.println(request.getReader().lines().collect(Collectors.joining(System.lineSeparator())));
+//		        req.getParameterNames().asIterator().forEachRemaining(p -> System.err.println(p));
+//		        if (module != null) {
+		        	if (assembly != null) {
+//		        		Assembly.setThreadAssembly(MongoTemplateManager.get(module).findOne(new Query(Criteria.where(Assembly.FIELDNAME_NAME).is(assembly)), Assembly.class).getId());
+		        		Assembly.setThreadAssembly(Integer.parseInt(assembly));
+		        		LOG.debug(req.getRequestURI() + ": Tied assembly " + Assembly.getThreadAssembly());
+		        	}
+		        	else
+		        		LOG.debug(req.getRequestURI() + ": No assembly identified to set for thread");
+//		        }
+//		        else
+//		        	LOG.debug(req.getRequestURI() + ": No assembly set for thread because no module name");
 //				assembly = Integer.parseInt(request.getParameter("assembly"));
 			}
 			catch (NumberFormatException ignored) {}
-			GigwaGa4ghServiceImpl.setThreadAssembly(assemblyId);
 		}
 
 		fc.doFilter(request, response);

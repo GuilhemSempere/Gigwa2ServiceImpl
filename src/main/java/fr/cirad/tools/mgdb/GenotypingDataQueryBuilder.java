@@ -41,6 +41,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
+import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
@@ -314,16 +315,16 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             
             if (fIsMultiRunProject) {
                 groupFields = new Document();
-                groupFields.put(VariantData.FIELDNAME_REFERENCE_POSITION + "¤" + ReferencePosition.FIELDNAME_SEQUENCE, new Document("$first", "$" + VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE));
-                groupFields.put(VariantData.FIELDNAME_REFERENCE_POSITION + "¤" + ReferencePosition.FIELDNAME_START_SITE, new Document("$first", "$" + VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE));
-                groupFields.put(VariantData.FIELDNAME_REFERENCE_POSITION + "¤" + ReferencePosition.FIELDNAME_END_SITE, new Document("$first", "$" + VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_END_SITE));
+                groupFields.put(Assembly.getThreadRefPosPath() + "¤" + ReferencePosition.FIELDNAME_SEQUENCE, new Document("$first", "$" + Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE));
+                groupFields.put(Assembly.getThreadRefPosPath() + "¤" + ReferencePosition.FIELDNAME_START_SITE, new Document("$first", "$" + Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE));
+                groupFields.put(Assembly.getThreadRefPosPath() + "¤" + ReferencePosition.FIELDNAME_END_SITE, new Document("$first", "$" + Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE));
                 groupFields.put(VariantData.FIELDNAME_TYPE, new Document("$first", "$" + VariantData.FIELDNAME_TYPE));
                 groupFields.put(VariantData.FIELDNAME_KNOWN_ALLELES, new Document("$first", "$" + VariantData.FIELDNAME_KNOWN_ALLELES));
             }
 
-            projectionFields.put(AbstractVariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, "$" + VariantData.FIELDNAME_REFERENCE_POSITION + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_SEQUENCE);
-            projectionFields.put(AbstractVariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE, "$" + VariantData.FIELDNAME_REFERENCE_POSITION + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_START_SITE);
-            projectionFields.put(AbstractVariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_END_SITE, "$" + VariantData.FIELDNAME_REFERENCE_POSITION + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_END_SITE);
+            projectionFields.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, "$" + Assembly.getThreadRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_SEQUENCE);
+            projectionFields.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, "$" + Assembly.getThreadRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_START_SITE);
+            projectionFields.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, "$" + Assembly.getThreadRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_END_SITE);
             projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, "$" + VariantData.FIELDNAME_TYPE);
             projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, "$" + VariantData.FIELDNAME_KNOWN_ALLELES);
         }
@@ -378,7 +379,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         boolean fFilteringOnSequence = false;
         for (Object variantFilter : variantQueryDBList)
-            if (((BasicDBObject) variantFilter).containsKey(AbstractVariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE)) {
+            if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE)) {
                 fFilteringOnSequence = true;
                 break;
             }
