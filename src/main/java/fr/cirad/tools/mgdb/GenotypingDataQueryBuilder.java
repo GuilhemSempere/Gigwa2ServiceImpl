@@ -736,6 +736,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         if (fMostSameSelected)
                             addFieldsIn.put("ed" + g, new BasicDBObject("$gte", Arrays.asList("$$dgc" + g, minimumDominantGenotypeCount)));    // flag telling whether or not we have enough dominant genotypes to reach the required ratio
                         
+                        if (fMissingDataApplied[g])
+                        	addFieldsIn.put("m" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g);
+
                         if (fDiscriminate && g == 1) {
                             addFieldsIn.put("dd", new BasicDBObject("$and", Arrays.asList(    /* dd (different dominant) set to true if both groups have exactly one dominant genotype and each group's dominant genotype differs from the other's */
                                 new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$r.c" + 0).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + 0, "$$this"))))))),
