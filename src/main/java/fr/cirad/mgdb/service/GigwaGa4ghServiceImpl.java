@@ -1377,6 +1377,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getMostSameRatio() + ":"
                         + gsvr.getMinMissingData() + ":"
                         + gsvr.getMaxMissingData() + ":"
+                        + gsvr.getMinHeZ() + ":"
+                        + gsvr.getMaxHeZ() + ":"
                         + gsvr.getMinMaf() + ":"
                         + gsvr.getMaxMaf() + ":"
 
@@ -1386,6 +1388,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getMostSameRatio2() + ":"
                         + gsvr.getMinMissingData2() + ":"
                         + gsvr.getMaxMissingData2() + ":"
+                        + gsvr.getMinHeZ2() + ":"
+                        + gsvr.getMaxHeZ2() + ":"
                         + gsvr.getMinMaf2() + ":"
                         + gsvr.getMaxMaf2() + ":"
 
@@ -2241,6 +2245,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public SearchReferenceSetsResponse searchReferenceSets(SearchReferenceSetsRequest srsr) throws AvroRemoteException {
+//    	long before = System.currentTimeMillis();
         List<String> list = new ArrayList<>();
 
         List<String> listModules = new ArrayList<>(MongoTemplateManager.getAvailableModules());
@@ -2324,6 +2329,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	        }
 	    }
 
+//	    LOG.debug("searchReferenceSets took " + (System.currentTimeMillis() - before) + "ms");
         return SearchReferenceSetsResponse.newBuilder().setReferenceSets(listRef).setNextPageToken(nextPageToken).build();
     }
 
