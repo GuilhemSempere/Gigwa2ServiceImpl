@@ -243,7 +243,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         Query q = new Query();
         q.fields().include(GenotypingProject.FIELDNAME_VARIANT_TYPES);
-           q.addCriteria(Criteria.where("_id").is(projId));
+        q.addCriteria(Criteria.where("_id").is(projId));
         GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
         return proj.getVariantTypes();
     }
@@ -386,7 +386,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             /* Step to match variants position range for visualization (differs from the 2 next, which is for defining the subset of data Gigwa is currently working with: it they are contradictory it still makes sense and means user is trying to view variants outside the range selected in Gigwa) */
             if (GigwaDensityRequest.class.isAssignableFrom(gsvr.getClass())) {
-                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, ((GigwaDensityRequest) gsvr).getDisplayedSequence()));
+                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, ((GigwaDensityRequest) gsvr).getDisplayedSequence()));
 
                 BasicDBObject posCrit = new BasicDBObject();
                 Long min = ((GigwaDensityRequest) gsvr).getDisplayedRangeMin(), max = ((GigwaDensityRequest) gsvr).getDisplayedRangeMax();
@@ -395,12 +395,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (max != null && max != -1)
                     posCrit.put("$lte", max);
                 if (!posCrit.isEmpty())
-                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, posCrit));
+                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, posCrit));
             }
 
             /* Step to match selected chromosomes */
             if (selectedSequences != null && selectedSequences.size() > 0 && selectedSequences.size() != getProjectSequences(sModule, projId).size()) {
-                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, new BasicDBObject("$in", selectedSequences)));
+                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, new BasicDBObject("$in", selectedSequences)));
             }
 
             /* Step to match variants that have a position included in the specified range */
@@ -408,11 +408,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 BasicDBObject posCrit = new BasicDBObject();
                 if (gsvr.getStart() != null && gsvr.getStart() != -1)
                     posCrit.put("$or", Arrays.asList(
-                    	new BasicDBObject(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$gte", gsvr.getStart())), 
-                		new BasicDBObject(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, new BasicDBObject("$gte", gsvr.getStart()))
+                    	new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$gte", gsvr.getStart())), 
+                		new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, new BasicDBObject("$gte", gsvr.getStart()))
                 	));
                 if (gsvr.getEnd() != null && gsvr.getEnd() != -1)
-                    posCrit.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$lte", gsvr.getEnd()));
+                    posCrit.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$lte", gsvr.getEnd()));
                 variantFeatureFilterList.add(posCrit);
             }
 
@@ -472,15 +472,15 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         Query q = new Query();
-        q.fields().include(GenotypingProject.FIELDNAME_SEQUENCES);
-           q.addCriteria(Criteria.where("_id").is(projId));
+        q.fields().include(Assembly.getThreadBoundProjectContigsPath());
+        q.addCriteria(Criteria.where("_id").is(projId));
         GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
 
-        int nSelectedSeqCount = gsvr.getReferenceName() == null || gsvr.getReferenceName().length() == 0 ? proj.getContigs(Assembly.getThreadAssembly()).size() : gsvr.getReferenceName().split(";").length;
+        int nSelectedSeqCount = gsvr.getReferenceName() == null || gsvr.getReferenceName().length() == 0 ? proj.getContigs(Assembly.getThreadBoundAssembly()).size() : gsvr.getReferenceName().split(";").length;
         if (nSelectedSeqCount == 1)
             return null;    // we can't expect user to select less than a single sequence
 
-        int nAvgVariantsPerSeq = (int) (mongoTemplate.count(new Query(), VariantData.class) / Math.max(1, proj.getContigs(Assembly.getThreadAssembly()).size()));
+        int nAvgVariantsPerSeq = (int) (mongoTemplate.count(new Query(), VariantData.class) / Math.max(1, proj.getContigs(Assembly.getThreadBoundAssembly()).size()));
         BigInteger maxSeqCount = BigInteger.valueOf(1000000000).multiply(BigInteger.valueOf(nMaxBillionGenotypesInvolved)).divide(BigInteger.valueOf(nAvgVariantsPerSeq).multiply(BigInteger.valueOf(nIndCount)));
         int nMaxSeqCount = Math.max(1, maxSeqCount.intValue());
 
@@ -922,7 +922,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	
 	                    if (partialCountArray != null)
 	                        genotypingDataPipeline.add(new BasicDBObject("$limit", partialCountArray[chunkIndex]));
-	                    genotypingDataPipeline.add(new BasicDBObject("$project", new BasicDBObject(VariantData.FIELDNAME_KNOWN_ALLELES, 1).append(Assembly.getThreadRefPosPath(), 1).append(VariantData.FIELDNAME_TYPE, 1)));
+	                    genotypingDataPipeline.add(new BasicDBObject("$project", new BasicDBObject(VariantData.FIELDNAME_KNOWN_ALLELES, 1).append(Assembly.getThreadBoundVariantRefPosPath(), 1).append(VariantData.FIELDNAME_TYPE, 1)));
 	
 	                        Thread queryThread = new Thread() {
 	                            @Override
@@ -1030,6 +1030,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                }
 	        	}
         }
+        else
+        	dropTempColl(sModule, progress.getProcessId());	// important because if it remains then a subsequent export will use that instead of working directly on runs
+
         if (partialCountArray == null)
             nTotalCount = countVariants(gsvr, true);
         else
@@ -1169,12 +1172,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             try {
                                 progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
                                 progress.moveToNextStep();    // done with identifying variants
-                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadAssembly(), nTempVarCount == 0 ? null : usedVarCollName, variantQuery, count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
+                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, variantQuery, count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
                                 progress.moveToNextStep();
-                                individualOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportFiles, true, progress, usedVarCollName, variantQuery, count, null, gsver.getMetadataFields(), readyToExportFiles);
+                                individualOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportFiles, true, progress, usedVarCollName, variantQuery, count, null, gsver.getMetadataFields(), readyToExportFiles);
                                 if (!progress.isAborted()) {
                                     LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                     progress.markAsComplete();
@@ -1220,7 +1223,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 Thread exportThread = new SessionAttributeAwareThread(gsver.getRequest().getSession()) {
                     public void run() {
                         try {
-                            markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarColl.getNamespace().getCollectionName(), variantQuery, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
+                            markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarCollName, variantQuery, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                 progress.markAsComplete();
@@ -1326,7 +1329,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public void onInterfaceUnload(String sModule, String processID) {
+    public void dropTempColl(String sModule, String processID) {
         String collName = getTemporaryVariantCollection(sModule, processID, false).getNamespace().getCollectionName();
         MongoTemplateManager.get(sModule).dropCollection(collName);
         LOG.debug("Dropped collection " + sModule + "." + collName);
@@ -1339,7 +1342,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         if (tmpVarColl.estimatedDocumentCount() == 0) {
             return listSequences(request, sModule, projId);    // working on full dataset
         }
-        List<String> distinctSequences = tmpVarColl.distinct(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, String.class).into(new ArrayList<>());
+        List<String> distinctSequences = tmpVarColl.distinct(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, String.class).into(new ArrayList<>());
         TreeSet<String> sortedResult = new TreeSet<>(new AlphaNumericComparator());
         sortedResult.addAll(distinctSequences);
         return sortedResult;
@@ -1362,7 +1365,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public String getQueryKey(GigwaSearchVariantsRequest gsvr) {
         String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
         int projId = Integer.parseInt(info[1]);
-        String queryKey = projId + ":" + Assembly.getThreadAssembly() + ":"
+        String queryKey = projId + ":" + Assembly.getThreadBoundAssembly() + ":"
                         + gsvr.getSelectedVariantTypes() + ":"
                         + gsvr.getReferenceName() + ":"
                         + (gsvr.getStart() == null ? "" : gsvr.getStart()) + ":"
@@ -1404,7 +1407,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public List<String> getProjectSequences(String sModule, int projId) {
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         GenotypingProject proj = mongoTemplate.findById(projId, GenotypingProject.class);
-        return new ArrayList<String>(proj.getContigs(Assembly.getThreadAssembly()));
+        return new ArrayList<String>(proj.getContigs(Assembly.getThreadBoundAssembly()));
     }
 
     /**
@@ -1506,6 +1509,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //        long before = System.currentTimeMillis();
         LinkedHashMap<Comparable, Variant> varMap = new LinkedHashMap<>();
 
+        String resfPosPath = Assembly.getThreadBoundVariantRefPosPath();
+        
         // parse the cursor to create all GAVariant
         while (cursor.hasNext()) {
             Document obj = cursor.next();
@@ -1513,24 +1518,22 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String id = (String) obj.get("_id");
             List<String> knownAlleles = ((List<String>) obj.get(VariantData.FIELDNAME_KNOWN_ALLELES));
 
-            Variant.Builder variantBuilder = Variant.newBuilder()
-                    .setId(createId(module, projId, id.toString()))
-                    .setVariantSetId(createId(module, projId));
+            Variant.Builder variantBuilder = Variant.newBuilder().setId(createId(module, projId, id.toString())).setVariantSetId(createId(module, projId));
 
-            Document rp = ((Document) obj.get(Assembly.getThreadRefPosPath()));
+            Document rp = (Document) Helper.readPossiblyNestedField(obj, resfPosPath, "; ", null);
             if (rp == null)
-                variantBuilder.setReferenceName("").setStart(-1).setEnd(-1);
+                variantBuilder.setReferenceName("").setStart(0).setEnd(0);
             else {
                 String chr = (String) rp.get(ReferencePosition.FIELDNAME_SEQUENCE);
-                    variantBuilder.setReferenceName(chr != null ? chr : "");
+                variantBuilder.setReferenceName(chr != null ? chr : "");
 
-                    Long start = (Long) rp.get(ReferencePosition.FIELDNAME_START_SITE);
-                variantBuilder.setStart(start != null ? start : -1);
+                Long start = (Long) rp.get(ReferencePosition.FIELDNAME_START_SITE);
+                variantBuilder.setStart(start != null ? start : 0);
 
-                    Long end = (Long) rp.get(ReferencePosition.FIELDNAME_END_SITE);
-                    if (end == null && start != null)
-                        end = start;
-                variantBuilder.setEnd(end != null ? end : -1);
+                Long end = (Long) rp.get(ReferencePosition.FIELDNAME_END_SITE);
+                if (end == null && start != null)
+                	end = start;
+                variantBuilder.setEnd(end != null ? end : 0);
             }
             if (knownAlleles.size() == 0)
                 throw new AvroRemoteException("Variant " + id.toString() + " has no known alleles!");
@@ -1947,31 +1950,21 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     public Variant getVariantWithGenotypes(String id, Collection<String> listInd) throws NumberFormatException, AvroRemoteException {
-        Variant variant = null;
-        // get information from id
         String[] info = id.split(GigwaGa4ghServiceImpl.ID_SEPARATOR);
-        if (info.length <= 2) {
-            // wrong number of param or wrong module name
-        } else {
-            String module = info[0];
-            String name = info[2];
-            String run = null;
-            if (info.length == 4)
-                run = info[3];
+        MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
+        MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", info[2])).iterator();
 
-            MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
-            MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", name)).iterator();
-
-            if (cursor != null && cursor.hasNext()) {
-                List<Criteria> sampleQueryCriteria = new ArrayList<>();
-                if (!listInd.isEmpty())
-                    sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(listInd));
-                if (run != null)
-                    sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_RUN).is(run));
-                Collection<GenotypingSample> samples = mongoTemplate.find(sampleQueryCriteria.isEmpty() ? new Query() : new Query(new Criteria().andOperator(sampleQueryCriteria.toArray(new Criteria[sampleQueryCriteria.size()]))), GenotypingSample.class);
-                variant = getVariantListFromDBCursor(module, Integer.parseInt(info[1]), cursor, samples).get(0);
-                cursor.close();
-            }
+        Variant variant = null;
+        if (cursor != null && cursor.hasNext()) {
+            List<Criteria> sampleQueryCriteria = new ArrayList<>();
+            sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_PROJECT_ID).is(Integer.parseInt(info[1])));
+            if (!listInd.isEmpty())
+                sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(listInd));
+            if (info.length == 4)	// run id may optionally be appended to variant id, to restrict samples to those involved in the run
+                sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_RUN).is(info[3]));
+            Collection<GenotypingSample> samples = mongoTemplate.find(new Query(new Criteria().andOperator(sampleQueryCriteria.toArray(new Criteria[sampleQueryCriteria.size()]))), GenotypingSample.class);
+            variant = getVariantListFromDBCursor(info[0], Integer.parseInt(info[1]), cursor, samples).get(0);
+            cursor.close();
         }
         return variant;
     }
@@ -2042,16 +2035,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             List<Assembly> assemblies = mongoTemplate.findAll(Assembly.class);
             List<String> assemblyNames = new ArrayList<>();
             MongoCollection<Document> projectColl = mongoTemplate.getCollection(mongoTemplate.getCollectionName(GenotypingProject.class));
-            if (assemblies.isEmpty())
-                    refCountDesc = projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; ";
-            else {
+//            if (assemblies.isEmpty())
+//                    refCountDesc = projectColl.distinct(GenotypingProject.FIELDNAME_SEQUENCES, String.class).into(new ArrayList<>()).size() + " references ; ";
+//            else {
                     refCountDesc = "";
                     for (Assembly assembly : assemblies) {
-                        refCountDesc += (refCountDesc.isEmpty() ? "" : ", ") + projectColl.distinct(GenotypingProject.FIELDNAME_CONTIGS + "." + assembly.getId(), String.class).into(new ArrayList<>()).size() + " references (assembly " + assembly.getName() + ")";
+                        refCountDesc += (refCountDesc.isEmpty() ? "" : ", ") + projectColl.distinct(Assembly.getThreadBoundProjectContigsPath(), String.class).into(new ArrayList<>()).size() + " references (assembly " + assembly.getName() + ")";
                         assemblyNames.add(assembly.getName());
                     }
                     refCountDesc += " ; ";
-            }
+//            }
             
             referenceSet = ReferenceSet.newBuilder()
                 .setId(id)
@@ -2084,7 +2077,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
 
             GenotypingProject proj = mongoTemplate.findById(projId, GenotypingProject.class);
-            Set<String> listRef = proj.getContigs(Assembly.getThreadAssembly());
+            Set<String> listRef = proj.getContigs(Assembly.getThreadBoundAssembly());
 
             // check if the sequence is in the list
             if (listRef.contains(name)) {
@@ -2447,6 +2440,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             Long count = null;
             long globalCount;
+            
+            String resfPosPath = Assembly.getThreadBoundVariantRefPosPath(), pjContigsPath = Assembly.getThreadBoundProjectContigsPath();
 
             MongoCursor<Document> cursor = null;
             try
@@ -2483,8 +2478,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                     if (gsvr.getSortBy() != null && gsvr.getSortBy().length() > 0)
                         iterable.sort(new BasicDBObject(gsvr.getSortBy(), Integer.valueOf("DESC".equalsIgnoreCase(gsvr.getSortDir()) ? -1 : 1)));
-                    else if (mongoTemplate.findOne(new Query(new Criteria().andOperator(Criteria.where("_id").is(projId), Criteria.where(GenotypingProject.FIELDNAME_SEQUENCES + ".0").exists(true))), GenotypingProject.class) != null)
-                        iterable.sort(new Document(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, 1).append(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, 1));
+                    else if (mongoTemplate.findOne(new Query(new Criteria().andOperator(Criteria.where("_id").is(projId), Criteria.where(pjContigsPath + ".0").exists(true))), GenotypingProject.class) != null)
+                        iterable.sort(new Document(resfPosPath + "." + ReferencePosition.FIELDNAME_SEQUENCE, 1).append(resfPosPath + "." + ReferencePosition.FIELDNAME_START_SITE, 1));
                     else
                         iterable.sort(new Document("_id", 1));  // no positions available in this project: let's sort variants by ID
 
@@ -2581,7 +2576,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     q.addCriteria(Criteria.where("_id").is(projId));
                 List<GenotypingProject> listProj = mongoTemplate.find(q, GenotypingProject.class);
                 for (int i = 0; i < listProj.size(); i++) {
-                    for (String seq : listProj.get(i).getContigs(Assembly.getThreadAssembly())) {
+                    for (String seq : listProj.get(i).getContigs(Assembly.getThreadBoundAssembly())) {
                         mapSeq.put(seq, i + 1);
                     }
                 }

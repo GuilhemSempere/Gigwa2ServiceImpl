@@ -318,16 +318,16 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             
             if (fIsMultiRunProject) {
                 groupFields = new Document();
-                groupFields.put(Assembly.getThreadRefPosPath() + "¤" + ReferencePosition.FIELDNAME_SEQUENCE, new Document("$first", "$" + Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE));
-                groupFields.put(Assembly.getThreadRefPosPath() + "¤" + ReferencePosition.FIELDNAME_START_SITE, new Document("$first", "$" + Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE));
-                groupFields.put(Assembly.getThreadRefPosPath() + "¤" + ReferencePosition.FIELDNAME_END_SITE, new Document("$first", "$" + Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE));
+                groupFields.put(Assembly.getThreadBoundVariantRefPosPath() + "¤" + ReferencePosition.FIELDNAME_SEQUENCE, new Document("$first", "$" + Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE));
+                groupFields.put(Assembly.getThreadBoundVariantRefPosPath() + "¤" + ReferencePosition.FIELDNAME_START_SITE, new Document("$first", "$" + Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE));
+                groupFields.put(Assembly.getThreadBoundVariantRefPosPath() + "¤" + ReferencePosition.FIELDNAME_END_SITE, new Document("$first", "$" + Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE));
                 groupFields.put(VariantData.FIELDNAME_TYPE, new Document("$first", "$" + VariantData.FIELDNAME_TYPE));
                 groupFields.put(VariantData.FIELDNAME_KNOWN_ALLELES, new Document("$first", "$" + VariantData.FIELDNAME_KNOWN_ALLELES));
             }
 
-            projectionFields.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, "$" + Assembly.getThreadRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_SEQUENCE);
-            projectionFields.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, "$" + Assembly.getThreadRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_START_SITE);
-            projectionFields.put(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, "$" + Assembly.getThreadRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_END_SITE);
+            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, "$" + Assembly.getThreadBoundVariantRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_SEQUENCE);
+            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, "$" + Assembly.getThreadBoundVariantRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_START_SITE);
+            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, "$" + Assembly.getThreadBoundVariantRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_END_SITE);
             projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, "$" + VariantData.FIELDNAME_TYPE);
             projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, "$" + VariantData.FIELDNAME_KNOWN_ALLELES);
         }
@@ -382,7 +382,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         boolean fFilteringOnSequence = false;
         for (Object variantFilter : variantQueryDBList)
-            if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE)) {
+            if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE)) {
                 fFilteringOnSequence = true;
                 break;
             }
@@ -923,9 +923,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static public List<Integer> getGroupsForWhichToFilterOnGenotypingData(GigwaSearchVariantsRequest gsvr, boolean fConsiderFieldThresholds)
     {
         List<Integer> result = new ArrayList<>();
-        if (gsvr.isDiscriminate() || !gsvr.getGtPattern().equals(GENOTYPE_CODE_LABEL_ALL) || (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) || gsvr.getMinHeZ() > 0 || gsvr.getMinHeZ() < 100 || gsvr.getMinMissingData() > 0 || gsvr.getMaxMissingData() < 100 || gsvr.getMinMaf() > 0 || gsvr.getMaxMaf() < 50)
+        if (gsvr.isDiscriminate() || !gsvr.getGtPattern().equals(GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) */|| gsvr.getMinHeZ() > 0 || gsvr.getMaxHeZ() < 100 || gsvr.getMinMissingData() > 0 || gsvr.getMaxMissingData() < 100 || gsvr.getMinMaf() > 0 || gsvr.getMaxMaf() < 50)
             result.add(0);
-        if (gsvr.isDiscriminate() || !gsvr.getGtPattern2().equals(GENOTYPE_CODE_LABEL_ALL) || (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds2().size() >= 1) || gsvr.getMinHeZ2() > 0 || gsvr.getMinHeZ2() < 100 || gsvr.getMinMissingData2() > 0 || gsvr.getMaxMissingData2() < 100 || gsvr.getMinMaf2() > 0 || gsvr.getMaxMaf2() < 50)
+        if (gsvr.isDiscriminate() || !gsvr.getGtPattern2().equals(GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds2().size() >= 1) */|| gsvr.getMinHeZ2() > 0 || gsvr.getMaxHeZ2() < 100 || gsvr.getMinMissingData2() > 0 || gsvr.getMaxMissingData2() < 100 || gsvr.getMinMaf2() > 0 || gsvr.getMaxMaf2() < 50)
             result.add(1);
 
         return result;
