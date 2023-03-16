@@ -874,8 +874,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            toAdd.add(new BasicDBObject("_id", variantIdFilter));
 	                            toRemove.add((DBObject) filter);
 	                        }
-	                        else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID)) {
-	                            toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
+	                        else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID) || null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_RUNNAME)) {
+	                            toRemove.add((DBObject) filter);    // no project / run info to filter on in the variants collection
 	                            fMultiProjectDB = true;
 	                        }
 	                    }
@@ -1509,7 +1509,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //        long before = System.currentTimeMillis();
         LinkedHashMap<Comparable, Variant> varMap = new LinkedHashMap<>();
 
-        String resfPosPath = Assembly.getThreadBoundVariantRefPosPath();
+        String refPosPath = Assembly.getThreadBoundVariantRefPosPath();
         
         // parse the cursor to create all GAVariant
         while (cursor.hasNext()) {
@@ -1520,7 +1520,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             Variant.Builder variantBuilder = Variant.newBuilder().setId(createId(module, projId, id.toString())).setVariantSetId(createId(module, projId));
 
-            Document rp = (Document) Helper.readPossiblyNestedField(obj, resfPosPath, "; ", null);
+            Document rp = (Document) Helper.readPossiblyNestedField(obj, refPosPath, "; ", null);
             if (rp == null)
                 variantBuilder.setReferenceName("").setStart(0).setEnd(0);
             else {
@@ -2441,7 +2441,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             Long count = null;
             long globalCount;
             
-            String resfPosPath = Assembly.getThreadBoundVariantRefPosPath(), pjContigsPath = Assembly.getThreadBoundProjectContigsPath();
+            String refPosPath = Assembly.getThreadBoundVariantRefPosPath(), pjContigsPath = Assembly.getThreadBoundProjectContigsPath();
 
             MongoCursor<Document> cursor = null;
             try
@@ -2477,9 +2477,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     iterable.collation(IExportHandler.collationObj);
 
                     if (gsvr.getSortBy() != null && gsvr.getSortBy().length() > 0)
-                        iterable.sort(new BasicDBObject(gsvr.getSortBy(), Integer.valueOf("DESC".equalsIgnoreCase(gsvr.getSortDir()) ? -1 : 1)));
+                        iterable.sort(new BasicDBObject((!"_id".equals(gsvr.getSortBy()) ? refPosPath + "." : "") + gsvr.getSortBy(), Integer.valueOf("DESC".equalsIgnoreCase(gsvr.getSortDir()) ? -1 : 1)));
                     else if (mongoTemplate.findOne(new Query(new Criteria().andOperator(Criteria.where("_id").is(projId), Criteria.where(pjContigsPath + ".0").exists(true))), GenotypingProject.class) != null)
-                        iterable.sort(new Document(resfPosPath + "." + ReferencePosition.FIELDNAME_SEQUENCE, 1).append(resfPosPath + "." + ReferencePosition.FIELDNAME_START_SITE, 1));
+                        iterable.sort(new Document(refPosPath + "." + ReferencePosition.FIELDNAME_SEQUENCE, 1).append(refPosPath + "." + ReferencePosition.FIELDNAME_START_SITE, 1));
                     else
                         iterable.sort(new Document("_id", 1));  // no positions available in this project: let's sort variants by ID
 

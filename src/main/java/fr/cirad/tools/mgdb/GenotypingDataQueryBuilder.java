@@ -131,6 +131,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     private List<Map> taggedVariantList;
 
     private BasicDBList variantQueryDBList;
+    
+    boolean m_fFilteringOnSequence = false;
 
     private Document groupFields;
 
@@ -227,6 +229,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         this.variantQueryDBList = variantQueryDBList;
         Helper.convertIdFiltersToRunFormat(Arrays.asList(this.variantQueryDBList));
         
+        for (Object variantFilter : variantQueryDBList)
+            if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE)) {
+                m_fFilteringOnSequence = true;
+                break;
+            }
+        
         String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
@@ -288,10 +296,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             intervalIndexList.add(i);
         
         this.projectionFields = new Document();
-        if (!fForCounting)
-        {
-            fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
-
+        fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
+        if (!fForCounting || fIsMultiRunProject) {
             for (ArrayList<GenotypingSample> samplesForAGivenIndividual : individualToSampleListMap[0].values()) {
                 if (samplesForAGivenIndividual.size() > 1) {
                     fGotMultiSampleIndividuals = true;
@@ -316,20 +322,18 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
             }
             
+            Integer nAssemblyId = Assembly.getThreadBoundAssembly();
+            String refPosField = nAssemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
             if (fIsMultiRunProject) {
                 groupFields = new Document();
-                groupFields.put(Assembly.getThreadBoundVariantRefPosPath() + "¤" + ReferencePosition.FIELDNAME_SEQUENCE, new Document("$first", "$" + Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE));
-                groupFields.put(Assembly.getThreadBoundVariantRefPosPath() + "¤" + ReferencePosition.FIELDNAME_START_SITE, new Document("$first", "$" + Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE));
-                groupFields.put(Assembly.getThreadBoundVariantRefPosPath() + "¤" + ReferencePosition.FIELDNAME_END_SITE, new Document("$first", "$" + Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE));
+                Document firstContents = new Document();
+            	firstContents.append(ReferencePosition.FIELDNAME_SEQUENCE, "$" + refPosField + (nAssemblyId != null ? "." + nAssemblyId : "") + "." + ReferencePosition.FIELDNAME_SEQUENCE)
+		                	.append(ReferencePosition.FIELDNAME_START_SITE, "$" + refPosField + (nAssemblyId != null ? "." + nAssemblyId : "") + "." + ReferencePosition.FIELDNAME_START_SITE)
+		                	.append(ReferencePosition.FIELDNAME_END_SITE, "$" + refPosField + (nAssemblyId != null ? "." + nAssemblyId : "") + "." + ReferencePosition.FIELDNAME_END_SITE);
+                groupFields.put(refPosField, new Document("$first", nAssemblyId != null ? new Document(nAssemblyId.toString(), firstContents) : firstContents));
                 groupFields.put(VariantData.FIELDNAME_TYPE, new Document("$first", "$" + VariantData.FIELDNAME_TYPE));
                 groupFields.put(VariantData.FIELDNAME_KNOWN_ALLELES, new Document("$first", "$" + VariantData.FIELDNAME_KNOWN_ALLELES));
             }
-
-            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, "$" + Assembly.getThreadBoundVariantRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_SEQUENCE);
-            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, "$" + Assembly.getThreadBoundVariantRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_START_SITE);
-            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, "$" + Assembly.getThreadBoundVariantRefPosPath() + (fIsMultiRunProject ? "¤" : ".") + ReferencePosition.FIELDNAME_END_SITE);
-            projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, "$" + VariantData.FIELDNAME_TYPE);
-            projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, "$" + VariantData.FIELDNAME_KNOWN_ALLELES);
         }
     }
     
@@ -377,17 +381,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         
         List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
         BasicDBList initialMatchList = new BasicDBList(), annotationMatchList = new BasicDBList(), finalMatchList = new BasicDBList();
-
-        pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", initialMatchList)));
-
-        boolean fFilteringOnSequence = false;
-        for (Object variantFilter : variantQueryDBList)
-            if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE)) {
-                fFilteringOnSequence = true;
-                break;
-            }
-
-        if (fFilteringOnSequence)
+        if (m_fFilteringOnSequence)
             initialMatchList.addAll(variantQueryDBList);    // more efficient if added first in this case
 
         if (Helper.estimDocCount(mongoTemplate,GenotypingProject.class) != 1)
@@ -432,10 +426,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             orList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", runsToRestrictQueryTo)));
 
             if (!annotationMatchList.isEmpty())
-                orList.add(new BasicDBObject("$and", annotationMatchList));  // we do the annotation match here first, in case they would be in different run records than those that have the genotypes we want (FIXME: functional annotations should go to VariantData)
+                orList.add(new BasicDBObject("$and", annotationMatchList));  // we do the annotation match here first, in case they would be in different run records than those that have the genotypes we want (FIXME: functional annotations should go into VariantData)
 
-            pipeline.add(new BasicDBObject("$match", orList.size() == 1 ? orList.get(0) : new BasicDBObject("$or", orList)));
+            initialMatchList.add(orList.size() == 1 ? orList.get(0) : new BasicDBObject("$or", orList));
         }
+        pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", initialMatchList)));
+
           
         boolean[] fZygosityRegex = new boolean[2];
         boolean[] fNegateMatch = new boolean[2];
@@ -517,7 +513,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             }
         }
 
-        if (variantQueryDBList.size() > 0 && !fFilteringOnSequence)
+        if (variantQueryDBList.size() > 0 && !m_fFilteringOnSequence)
             initialMatchList.addAll(variantQueryDBList);    // more efficient if added after chunking bit in this case
         
         if (fIsMultiRunProject)
@@ -543,11 +539,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 List<GenotypingSample> individualSamples = individualToSampleListMap[g].get(ind);
                 for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
                     GenotypingSample individualSample = individualSamples.get(k);
-                    String pathToGT = individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
-                    Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES/* + (int) ((individualSample.getId() - 1) / 100)*/ + "." + pathToGT;
+                    Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES/* + (int) ((individualSample.getId() - 1) / 100)*/ + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
                     if (fNeedGtArray && fIsMultiRunProject)
-                        groupFields.put(pathToGT.replaceAll("\\.", "¤"), new BasicDBObject("$addToSet", fullPathToGT));
-                    individualSampleGenotypeList.add("$" + pathToGT.replaceAll("\\.", "¤"));
+                        groupFields.put(SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId(), new BasicDBObject("$addToSet", fullPathToGT));
+                    individualSampleGenotypeList.add("$" + SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId());
                     
                     if (annotationFieldThresholds[g] != null)
                         for (String annotation : annotationFieldThresholds[g].keySet()) {
@@ -557,10 +552,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
                             String pathToAnnotationField = individualSample.getId() + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + annotation;
                             if (fNeedGtArray && fIsMultiRunProject)
-                                groupFields.put(pathToAnnotationField.replaceAll("\\.", "¤"), new BasicDBObject("$addToSet", "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + pathToAnnotationField));
+                                groupFields.put(pathToAnnotationField, new BasicDBObject("$addToSet", "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + pathToAnnotationField));
                             
                             BasicDBList qualTooLowList = new BasicDBList();
-                            qualTooLowList.add(fIsMultiRunProject ? new BasicDBObject("$arrayElemAt", new Object[] {"$" + pathToAnnotationField.replaceAll("\\.", "¤"), 0}) : ("$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + pathToAnnotationField));
+                            qualTooLowList.add(fIsMultiRunProject ? new BasicDBObject("$arrayElemAt", new Object[] {"$" + pathToAnnotationField, 0}) : ("$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + pathToAnnotationField));
                             qualTooLowList.add(threshold);
         
                             BasicDBObject qualTooLow = new BasicDBObject("$lt", qualTooLowList);
@@ -791,7 +786,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (!annotationMatchList.isEmpty())
             pipeline.add(new BasicDBObject(new BasicDBObject("$match", new BasicDBObject("$and", annotationMatchList))));  // re-apply this here in case of multiple runs (annotations could be in a different run than the one containing wanted genotypes)
 
-        pipeline.add(new BasicDBObject("$project", projectionFields));
+        if (!projectionFields.isEmpty()) {
+            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath(), 1);
+            projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, 1);
+            projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, 1);
+            pipeline.add(new BasicDBObject("$project", projectionFields));
+        }
         
         if (addFieldsIn.size() > 0) {
             BasicDBObject addFieldsLet = new BasicDBObject("vars", addFieldsVars);
