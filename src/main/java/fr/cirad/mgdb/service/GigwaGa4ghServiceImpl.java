@@ -1504,7 +1504,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * @return List<Variant>
      * @throws AvroRemoteException
      */
-    public List<Variant> getVariantListFromDBCursor(String module, int projId, MongoCursor<Document> cursor, Collection<GenotypingSample> samples) throws AvroRemoteException
+    public List<Variant> getVariantListFromDBCursor(String module, int projId, MongoCursor<Document> cursor, Collection<GenotypingSample> samples)
     {
 //        long before = System.currentTimeMillis();
         LinkedHashMap<Comparable, Variant> varMap = new LinkedHashMap<>();
@@ -1535,12 +1535,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 	end = start;
                 variantBuilder.setEnd(end != null ? end : 0);
             }
-            if (knownAlleles.size() == 0)
-                throw new AvroRemoteException("Variant " + id.toString() + " has no known alleles!");
+            if (knownAlleles.size() > 0) {
+	            variantBuilder.setReferenceBases(knownAlleles.get(0)); // reference is the first one in VCF files
+	            variantBuilder.setAlternateBases(knownAlleles.subList(1, knownAlleles.size()));
+            }
+            else
+                variantBuilder.setReferenceBases("");	// the DTO used here requires a reference allele to be provided: the chosen convention is to provide a single allele coded as an empty string when no allele is known for a variant
 
-            variantBuilder.setReferenceBases(knownAlleles.get(0)); // reference is the first one in VCF files
-            variantBuilder.setAlternateBases(knownAlleles.subList(1, knownAlleles.size()));
-            
             // add the annotation map to the variant
             Map<String, List<String>> annotations = new HashMap<>();
             List<String> infoType = new ArrayList<>();
@@ -1946,7 +1947,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public Variant getVariant(String id) throws AvroRemoteException {
-        return getVariantWithGenotypes(id, new ArrayList() /* all individuals */);
+        return getVariantWithGenotypes(id, new ArrayList<>() /* all individuals */);
     }
 
     public Variant getVariantWithGenotypes(String id, Collection<String> listInd) throws NumberFormatException, AvroRemoteException {
