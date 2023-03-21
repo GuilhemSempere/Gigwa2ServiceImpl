@@ -60,28 +60,11 @@ public class GigwaAssemblyFilter implements javax.servlet.Filter {
 		if (request instanceof HttpServletRequest)
 		{
 			HttpServletRequest req = (HttpServletRequest) request;
-//			Integer assemblyId = null;
 			try {
-//				String module = req.getParameter("module");
 		        String assembly = req.getHeader("assembly");
-//		        System.out.println(req.getRequestURI());
-//		        System.err.println(request.getReader().lines().collect(Collectors.joining(System.lineSeparator())));
-//		        req.getParameterNames().asIterator().forEachRemaining(p -> System.err.println(p));
-//		        if (module != null) {
-//		        	if (assembly != null) {
-//		        		Assembly.setThreadAssembly(MongoTemplateManager.get(module).findOne(new Query(Criteria.where(Assembly.FIELDNAME_NAME).is(assembly)), Assembly.class).getId());
-		        		Assembly.setThreadAssembly(assembly == null ? null : Integer.parseInt(assembly));
-//		        		LOG.debug(req.getRequestURI() + ": Tied assembly " + Assembly.getThreadAssembly());
-//		        	}
-//		        	else
-//		        		LOG.debug(req.getRequestURI() + ": No assembly identified to set for thread");
-//		        }
-//		        else
-//		        	LOG.debug(req.getRequestURI() + ": No assembly set for thread because no module name");
-//				assembly = Integer.parseInt(request.getParameter("assembly"));
+        		Assembly.setThreadAssembly(assembly == null ? null : Integer.parseInt(assembly));
 			}
 			catch (NumberFormatException ignored) {}
-//			System.err.println("gigwa " + Assembly.getThreadBoundAssembly());
 		}
 
 		fc.doFilter(request, response);
