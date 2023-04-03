@@ -235,7 +235,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 break;
             }
         
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -250,7 +250,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         q.addCriteria(Criteria.where(GenotypingProject.FIELDNAME_EFFECT_ANNOTATIONS + ".0").exists(true));
         this.projectHasEffectAnnotations = mongoTemplate.findOne(q, GenotypingProject.class) != null;
 
-        this.selectedIndividuals[0] = gsvr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet());
+        this.selectedIndividuals[0] = gsvr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
         this.operator[0] = genotypePatternToQueryMap.get(gsvr.getGtPattern());
         this.mostSameRatio[0] = gsvr.getMostSameRatio();
         this.annotationFieldThresholds[0] = gsvr.getAnnotationFieldThresholds();
@@ -268,7 +268,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
         if (filteredGroups.contains(1))
         {
-            this.selectedIndividuals[1] = gsvr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gsvr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet());
+            this.selectedIndividuals[1] = gsvr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gsvr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
             this.operator[1] = genotypePatternToQueryMap.get(gsvr.getGtPattern2());
             this.mostSameRatio[1] = gsvr.getMostSameRatio2();
             this.annotationFieldThresholds[1] = gsvr.getAnnotationFieldThresholds2();
@@ -935,7 +935,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     {
         List<Integer> result = getGroupsForWhichToFilterOnGenotypingData(gsvr, fConsiderFielThresholds);
         
-        if (result.size() == 0 && (Helper.estimDocCount(GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2)[0], GenotypingProject.class) != 1 || gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
+        if (result.size() == 0 && (Helper.estimDocCount(Helper.getInfoFromId(gsvr.getVariantSetId(), 2)[0], GenotypingProject.class) != 1 || gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
             result.add(0);    // needed at least for filtering on annotation data or distinguish records according to project id
 
         /*FIXME: this should also force filtering on VRD in cases where only some runs of the selected project are involved*/

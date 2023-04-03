@@ -72,7 +72,7 @@ public class VisualizationService {
     		return true;	// nothing to do
     	}
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvdr.getVariantSetId(), 2);
         String sModule = info[0];
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -120,7 +120,7 @@ public class VisualizationService {
     public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
         long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
         ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "variant density on sequence " + gdr.getDisplayedSequence()});
@@ -241,7 +241,7 @@ public class VisualizationService {
     public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
     	long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
 		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Fst estimate on sequence " + gdr.getDisplayedSequence()});
@@ -442,7 +442,7 @@ public class VisualizationService {
     public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
 		long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
 		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Tajima's D on sequence " + gdr.getDisplayedSequence()});
@@ -549,7 +549,7 @@ public class VisualizationService {
     private static final String GENOTYPE_DATA_S10_SAMPLEINDEX = "sx";
 
     private List<BasicDBObject> buildGenotypeDataQuery(GigwaDensityRequest gdr, boolean useTempColl, Map<String, List<GenotypingSample>> individualToSampleListMap, boolean keepPosition) {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -693,17 +693,17 @@ public class VisualizationService {
     private static final String FST_RES_POPULATIONS = "ps";
 
     private List<BasicDBObject> buildFstQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
         if (gdr.getDisplayedAdditionalGroups() == null) {
-        	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
-        	selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+        	selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
         } else {
         	for (Collection<String> group : gdr.getDisplayedAdditionalGroups()) {
-        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
         	}
         }
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
@@ -820,12 +820,12 @@ public class VisualizationService {
     private static final String TJD_RES_TAJIMAD = "tjd";
 
     private List<BasicDBObject> buildTajimaDQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<String> selectedIndividuals = new ArrayList<String>();
-        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
@@ -979,7 +979,7 @@ public class VisualizationService {
     public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr) throws Exception {
         long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gvfpr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gvfpr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 

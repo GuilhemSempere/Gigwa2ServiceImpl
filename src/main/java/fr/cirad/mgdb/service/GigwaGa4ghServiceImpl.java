@@ -282,7 +282,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         while (it.hasNext())
         {
             VariantRunData vrd = it.next();
-            Collection<SampleGenotype> spGTs = vrd.getSampleGenotypes().size() > 100 ? new ArrayList(vrd.getSampleGenotypes().values()).subList(0,  100) : vrd.getSampleGenotypes().values();
+            Collection<SampleGenotype> spGTs = vrd.getSampleGenotypes().size() > 100 ? new ArrayList<>(vrd.getSampleGenotypes().values()).subList(0,  100) : vrd.getSampleGenotypes().values();
             for (HashMap<String, Object> annotationMap : spGTs.stream().map(sg -> sg.getAdditionalInfo()).collect(Collectors.toList()))
                 for (String aiKey : annotationMap.keySet())
                     if (Number.class.isAssignableFrom(annotationMap.get(aiKey).getClass()))
@@ -354,7 +354,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public Collection<BasicDBList> buildVariantDataQuery(GigwaSearchVariantsRequest gsvr, List<String> externallySelectedSeqs, boolean fForBrowsing) {
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
         String actualSequenceSelection = gsvr.getReferenceName();
@@ -449,7 +449,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     private String isSearchedDatasetReasonablySized(GigwaSearchVariantsRequest gsvr) throws Exception
     {
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -492,7 +492,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public long countVariants(GigwaSearchVariantsRequest gsvr, boolean fSelectionAlreadyExists) throws Exception {
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -759,7 +759,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         progress.addStep("Finding matching variants");
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         String queryKey = getQueryKey(gsvr);
 
@@ -1061,7 +1061,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             }
         }.start();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsver.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsver.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -1069,8 +1069,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         int nGroupsToFilterGenotypingDataOn = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsver, true).size();
 
-        Set<String> selectedIndividualList1 = gsver.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet());
-        Set<String> selectedIndividualList2 = gsver.getCallSetIds2().size() == 0 && nGroupsToFilterGenotypingDataOn > 1 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet());
+        Set<String> selectedIndividualList1 = gsver.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
+        Set<String> selectedIndividualList2 = gsver.getCallSetIds2().size() == 0 && nGroupsToFilterGenotypingDataOn > 1 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
         Collection<String> individualsToExport = gsver.getExportedIndividuals().size() > 0 ? gsver.getExportedIndividuals() : MgdbDao.getProjectIndividuals(sModule, projId);
 
         long count = countVariants(gsver, true);
@@ -1363,7 +1363,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public String getQueryKey(GigwaSearchVariantsRequest gsvr) {
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         int projId = Integer.parseInt(info[1]);
         String queryKey = projId + ":" + Assembly.getThreadBoundAssembly() + ":"
                         + gsvr.getSelectedVariantTypes() + ":"
@@ -1518,7 +1518,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String id = (String) obj.get("_id");
             List<String> knownAlleles = ((List<String>) obj.get(VariantData.FIELDNAME_KNOWN_ALLELES));
 
-            Variant.Builder variantBuilder = Variant.newBuilder().setId(createId(module, projId, id.toString())).setVariantSetId(createId(module, projId));
+            Variant.Builder variantBuilder = Variant.newBuilder().setId(Helper.createId(module, projId, id.toString())).setVariantSetId(Helper.createId(module, projId));
 
             Document rp = (Document) Helper.readPossiblyNestedField(obj, refPosPath, "; ", null);
             if (rp == null)
@@ -1649,7 +1649,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                     if (gt.contains("/")) {
                                         gen = gt.split("/");
                                     } else {
-                                        gen = gt.split(GigwaGa4ghServiceImpl.ID_SEPARATOR);
+                                        gen = gt.split(Helper.ID_SEPARATOR);
                                     }
                                     for (String gen1 : gen) {
                                         genotype.add(Integer.parseInt(gen1));
@@ -1657,7 +1657,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 }
                             }
                             Call call = Call.newBuilder()
-                                    .setCallSetId(createId(module, projId, sampleIdToIndividualMap.get(sampleId)))
+                                    .setCallSetId(Helper.createId(module, projId, sampleIdToIndividualMap.get(sampleId)))
                                     .setGenotype(genotype)
                                     .setGenotypeLikelihood(listGL)
                                     .setPhaseset(phaseSet)
@@ -1700,21 +1700,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
 //        LOG.debug("getVariantListFromDBCursor took " + (System.currentTimeMillis() - before) / 1000f + "s for " + varMap.size() + " variants and " + samples.size() + " samples");
         return new ArrayList<Variant>(varMap.values());
-    }
-
-    /**
-     * create composite ID from a list of params
-     *
-     * @param params
-     * @return String the id
-     */
-    static public String createId(Comparable... params) {
-        String result = "";
-
-        for (Comparable val : params) {
-            result += val + ID_SEPARATOR;
-        }
-        return result.substring(0, result.length() - 1);
     }
 
     /**
@@ -1911,7 +1896,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     {
         VariantSet variantSet = null;
         // get information from id
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(id, 2);
+        String[] info = Helper.getInfoFromId(id, 2);
         if (info != null)
             try
             {
@@ -1926,7 +1911,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (proj.getDescription() != null)
                 {
                     VariantSetMetadata vsmd = new VariantSetMetadata();
-                    vsmd.setKey(Constants.DESCRIPTION);
+                    vsmd.setKey(AbstractVariantData.VCF_CONSTANT_DESCRIPTION);
                     vsmd.setValue(proj.getDescription());
                     metadata.add(vsmd);
                 }
@@ -1951,7 +1936,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     public Variant getVariantWithGenotypes(String id, Collection<String> listInd) throws NumberFormatException, AvroRemoteException {
-        String[] info = id.split(GigwaGa4ghServiceImpl.ID_SEPARATOR);
+        String[] info = id.split(Helper.ID_SEPARATOR);
         MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
         MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", info[2])).iterator();
 
@@ -1975,7 +1960,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         CallSet callSet = null;
 
         // get information from id
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(id, 3);
+        String[] info = Helper.getInfoFromId(id, 3);
         if (info == null) {
 
             // wrong number of param or wrong module name
@@ -1985,7 +1970,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String name = info[2];
 
             List<String> listVariantSetId = new ArrayList<>();
-            listVariantSetId.add(createId(module, info[1]));
+            listVariantSetId.add(Helper.createId(module, info[1]));
 
             try {
                 // check if the callSet is in the list
@@ -2066,7 +2051,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         Reference reference = null;
 
         // get information from id
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(id, 3);
+        String[] info = Helper.getInfoFromId(id, 3);
         if (info == null) {
 
             // wrong number of param or wrong module name
@@ -2109,7 +2094,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Override
     public ListReferenceBasesResponse getReferenceBases(String id, ListReferenceBasesRequest lrbr) throws AvroRemoteException
     {
-           String[] info = GigwaSearchVariantsRequest.getInfoFromId(id, 3);
+           String[] info = Helper.getInfoFromId(id, 3);
            String module = info[0];
            String seqName = info[2];
            String sequenceBases = "";
@@ -2175,7 +2160,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Override
     public SearchCallSetsResponse searchCallSets(SearchCallSetsRequest scsr) throws AvroRemoteException {
         // get information from id
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(scsr.getVariantSetId(), 2);
+        String[] info = Helper.getInfoFromId(scsr.getVariantSetId(), 2);
         if (info == null)
             return null;
 
@@ -2217,7 +2202,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         List<String> indList = new ArrayList() {{ addAll(indMap.keySet()); }};
         for (int i = start; i < end; i++) {
             final Individual ind = indMap.get(indList.get(i));
-            CallSet.Builder csb = CallSet.newBuilder().setId(createId(module, info[1], ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(createId(module, info[1], ind.getId(), ind.getId()));
+            CallSet.Builder csb = CallSet.newBuilder().setId(Helper.createId(module, info[1], ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(Helper.createId(module, info[1], ind.getId(), ind.getId()));
 
             if (!ind.getAdditionalInfo().isEmpty()) {
                             Map<String, String> addInfoMap = new HashMap();
@@ -2332,7 +2317,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         SearchVariantSetsResponse response = null;
 
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(svsr.getDatasetId(), 1);
+        String[] info = Helper.getInfoFromId(svsr.getDatasetId(), 1);
         if (info == null)
             return null;
 
@@ -2377,12 +2362,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (proj.getDescription() != null)
             {
                 VariantSetMetadata vsmd = new VariantSetMetadata();
-                vsmd.setKey(Constants.DESCRIPTION);
+                vsmd.setKey(AbstractVariantData.VCF_CONSTANT_DESCRIPTION);
                 vsmd.setValue(proj.getDescription());
                 metadata.add(vsmd);
             }
             VariantSet variantSet = VariantSet.newBuilder()
-                    .setId(createId(module, projId))
+                    .setId(Helper.createId(module, projId))
                     .setReferenceSetId(module)
                     .setDatasetId(module)
                     .setName(listProj.get(i).getName())
@@ -2404,7 +2389,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         GigwaSearchVariantsResponse response = null;
         // get extra info
         GigwaSearchVariantsRequest gsvr = (GigwaSearchVariantsRequest) svr;
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(svr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(svr.getVariantSetId(), 2);
         if (info == null) {
             // wrong number of param or wrong module name
         } else {
@@ -2503,7 +2488,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 Collection<GenotypingSample> samples = new ArrayList<>();
                 if (getGT) {
                     try {
-                        samples = MgdbDao.getSamplesForProject(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(GigwaGa4ghServiceImpl.ID_SEPARATOR))).collect(Collectors.toList()));
+                        samples = MgdbDao.getSamplesForProject(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toList()));
                     } catch (ObjectNotFoundException ex) {
                         java.util.logging.Logger.getLogger(GigwaGa4ghServiceImpl.class.getName()).log(Level.SEVERE, null, ex);
                     }
@@ -2539,7 +2524,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         SearchReferencesResponse response = null;
 
         // get information from id
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(srr.getReferenceSetId(), 1);
+        String[] info = Helper.getInfoFromId(srr.getReferenceSetId(), 1);
         if (info == null) {
 
             // wrong number of param or wrong module name
@@ -2547,9 +2532,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String module = info[0];
             GigwaSearchReferencesRequest gsr = (GigwaSearchReferencesRequest) srr;
             int projId = -1; // default : return all sequences of a module
-            String[] array = gsr.getVariantSetId().split(GigwaGa4ghServiceImpl.ID_SEPARATOR);
+            String[] array = gsr.getVariantSetId().split(Helper.ID_SEPARATOR);
             if (array.length > 1) {
-                projId = Integer.parseInt(gsr.getVariantSetId().split(GigwaGa4ghServiceImpl.ID_SEPARATOR)[1]);
+                projId = Integer.parseInt(gsr.getVariantSetId().split(Helper.ID_SEPARATOR)[1]);
             }
 
             MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
@@ -2615,7 +2600,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                 // Checksum : MD5 of the upper-case sequence excluding all whitespace characters (we usually don't have it)
                 String md5 = sequence == null ? Helper.convertToMD5("") : (String) sequence.get(Sequence.FIELDNAME_CHECKSUM);
-                Reference reference = Reference.newBuilder().setId(createId(module, projectId, name))
+                Reference reference = Reference.newBuilder().setId(Helper.createId(module, projectId, name))
                         .setMd5checksum(md5 == null ? Helper.convertToMD5("") : md5)
                         .setName(name)
                         .setLength(sequence == null ? 0 : (long) sequence.get(Sequence.FIELDNAME_LENGTH))    // length == 0 when we don't have this information
@@ -2655,10 +2640,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         VariantAnnotation.Builder variantAnnotationBuilder = VariantAnnotation.newBuilder()
             .setVariantId(id)
             .setId(id)
-            .setVariantAnnotationSetId(id.substring(0, id.lastIndexOf(ID_SEPARATOR))); // which variant annotation set?
+            .setVariantAnnotationSetId(id.substring(0, id.lastIndexOf(Helper.ID_SEPARATOR))); // which variant annotation set?
 
         // get information from id
-        String[] info = GigwaSearchVariantsRequest.getInfoFromId(id, 3);
+        String[] info = Helper.getInfoFromId(id, 3);
         if (info == null) {
             // wrong number of param or wrong module name
         } else {
@@ -2696,9 +2681,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     // source version is stored in the ontology map
                     String sourceVersion = getOntologyId(Constants.VERSION) == null ? "" : getOntologyId(Constants.VERSION);
 
-                    BasicDBObject fieldHeader = new BasicDBObject(Constants.INFO_META_DATA + "." + (fAnnStyle ? VcfImport.ANNOTATION_FIELDNAME_ANN : VcfImport.ANNOTATION_FIELDNAME_EFF) + "." + Constants.DESCRIPTION, 1);
+                    BasicDBObject fieldHeader = new BasicDBObject(AbstractVariantData.VCF_CONSTANT_INFO_META_DATA + "." + (fAnnStyle ? VcfImport.ANNOTATION_FIELDNAME_ANN : VcfImport.ANNOTATION_FIELDNAME_EFF) + "." + AbstractVariantData.VCF_CONSTANT_DESCRIPTION, 1);
                     if (fAnnStyle)
-                        fieldHeader.put(Constants.INFO_META_DATA + "." + VcfImport.ANNOTATION_FIELDNAME_CSQ + "." + Constants.DESCRIPTION, 1);
+                        fieldHeader.put(AbstractVariantData.VCF_CONSTANT_INFO_META_DATA + "." + VcfImport.ANNOTATION_FIELDNAME_CSQ + "." + AbstractVariantData.VCF_CONSTANT_DESCRIPTION, 1);
 
                     MongoCollection<Document> vcfHeaderColl = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(DBVCFHeader.class));
                     BasicDBList vcfHeaderQueryOrList = new BasicDBList();
@@ -2711,11 +2696,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     LinkedHashSet<String> usedHeaderSet = new LinkedHashSet<>();
                     if (!fAnnStyle)
                         headerList.add("Consequence");    // EFF style annotations
-                    Document annInfo = (Document) ((Document) vcfHeaderEff.get(Constants.INFO_META_DATA)).get(fAnnStyle ? VcfImport.ANNOTATION_FIELDNAME_ANN : VcfImport.ANNOTATION_FIELDNAME_EFF);
+                    Document annInfo = (Document) ((Document) vcfHeaderEff.get(AbstractVariantData.VCF_CONSTANT_INFO_META_DATA)).get(fAnnStyle ? VcfImport.ANNOTATION_FIELDNAME_ANN : VcfImport.ANNOTATION_FIELDNAME_EFF);
                     if (annInfo == null && fAnnStyle)
-                        annInfo = (Document) ((Document) vcfHeaderEff.get(Constants.INFO_META_DATA)).get(VcfImport.ANNOTATION_FIELDNAME_CSQ);
+                        annInfo = (Document) ((Document) vcfHeaderEff.get(AbstractVariantData.VCF_CONSTANT_INFO_META_DATA)).get(VcfImport.ANNOTATION_FIELDNAME_CSQ);
                     if (annInfo != null) {
-                        header = (String) annInfo.get(Constants.DESCRIPTION);
+                        header = (String) annInfo.get(AbstractVariantData.VCF_CONSTANT_DESCRIPTION);
                         if (header != null) {
                             // consider using the headers for additional info keySet
                             String sBeforeFieldList = fAnnStyle ? ": " : " (";
@@ -2839,7 +2824,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                         TranscriptEffect transcriptEffect = TranscriptEffect.newBuilder()
                                 .setAlternateBases(values.get(0))
-                                .setId(id + ID_SEPARATOR + i)
+                                .setId(id + Helper.ID_SEPARATOR + i)
                                 .setEffects(ontologyList)
                                 .setHgvsAnnotation(hgvsBuilder.build())
                                 .setCDNALocation(cDnaLocation)
@@ -2948,17 +2933,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         BasicDBObject queryVarAnn = new BasicDBObject();
         BasicDBObject varAnnField = new BasicDBObject();
         queryVarAnn.put("_id." + DBVCFHeader.VcfHeaderId.FIELDNAME_PROJECT, projId);
-        varAnnField.put(Constants.INFO_META_DATA, 1);
-        varAnnField.put(Constants.INFO_FORMAT_META_DATA, 1);
+        varAnnField.put(AbstractVariantData.VCF_CONSTANT_INFO_META_DATA, 1);
+        varAnnField.put(AbstractVariantData.VCF_CONSTANT_INFO_FORMAT_META_DATA, 1);
         Document result = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(DBVCFHeader.class)).find(queryVarAnn).projection(varAnnField).first();
         if (result != null) {
-            Document metaDataHeader = (Document) result.get(Constants.INFO_META_DATA);
+            Document metaDataHeader = (Document) result.get(AbstractVariantData.VCF_CONSTANT_INFO_META_DATA);
             for (String key : metaDataHeader.keySet()) {
-                annHeaders.put(key, (String) ((Document) metaDataHeader.get(key)).get(Constants.DESCRIPTION));
+                annHeaders.put(key, (String) ((Document) metaDataHeader.get(key)).get(AbstractVariantData.VCF_CONSTANT_DESCRIPTION));
             }
-            Document formatHeader = (Document) result.get(Constants.INFO_FORMAT_META_DATA);
+            Document formatHeader = (Document) result.get(AbstractVariantData.VCF_CONSTANT_INFO_FORMAT_META_DATA);
             for (String key : formatHeader.keySet()) {
-                annHeaders.put(key, (String) ((Document) formatHeader.get(key)).get(Constants.DESCRIPTION));
+                annHeaders.put(key, (String) ((Document) formatHeader.get(key)).get(AbstractVariantData.VCF_CONSTANT_DESCRIPTION));
             }
         }
         return annHeaders;
