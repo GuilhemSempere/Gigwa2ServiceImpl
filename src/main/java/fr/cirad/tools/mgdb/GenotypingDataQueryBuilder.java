@@ -51,7 +51,6 @@ import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
-import fr.cirad.mgdb.service.IGigwaService;
 import fr.cirad.model.GigwaSearchVariantsRequest;
 import fr.cirad.tools.Helper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
@@ -317,7 +316,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 involvedSamples.addAll(individualToSampleListMap[1].values().stream().flatMap(List::stream).collect(Collectors.toList()));
             HashMap<Integer, List<String>> involvedRunsByProject = Helper.getRunsByProjectInSampleCollection(involvedSamples);
             List<String> involvedProjectRuns = involvedRunsByProject.get(genotypingProject.getId());
-            if (involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
+            if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
                 runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
                 fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
             }
