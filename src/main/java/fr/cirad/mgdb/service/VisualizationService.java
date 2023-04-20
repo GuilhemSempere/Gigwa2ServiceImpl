@@ -32,6 +32,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
+import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
@@ -64,57 +65,62 @@ public class VisualizationService {
     
 	@Autowired private GigwaGa4ghServiceImpl ga4ghService;
 	
-    public boolean findDefaultRangeMinMax(GigwaDensityRequest gsvdr, String collectionName, ProgressIndicator progress)
+    private boolean findDefaultRangeMinMax(GigwaDensityRequest gsvdr, String collectionName)
     {
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gsvdr.getVariantSetId(), 2);
+    	if (gsvdr.getDisplayedRangeMin() != null && gsvdr.getDisplayedRangeMax() != null) {
+    		LOG.info("findDefaultRangeMinMax skipped because min-max values already set");
+    		return true;	// nothing to do
+    	}
+
+        String info[] = Helper.getInfoFromId(gsvdr.getVariantSetId(), 2);
         String sModule = info[0];
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-
+		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
+		
 		BasicDBList matchAndList = new BasicDBList();
-		matchAndList.add(new BasicDBObject(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, gsvdr.getDisplayedSequence()));
+		matchAndList.add(new BasicDBObject(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE, gsvdr.getDisplayedSequence()));
         if ((gsvdr.getStart() != null && gsvdr.getStart() != -1) || (gsvdr.getEnd() != null && gsvdr.getEnd() != -1)) {
             BasicDBObject posCrit = new BasicDBObject();
             if (gsvdr.getStart() != null && gsvdr.getStart() != -1)
                 posCrit.put("$gte", gsvdr.getStart());
             if (gsvdr.getEnd() != null && gsvdr.getEnd() != -1)
                 posCrit.put("$lte", gsvdr.getEnd());
-            matchAndList.add(new BasicDBObject(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE, posCrit));
+            matchAndList.add(new BasicDBObject(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE, posCrit));
         }
 		if (gsvdr.getDisplayedVariantType() != null)
 			matchAndList.add(new BasicDBObject(VariantData.FIELDNAME_TYPE, gsvdr.getDisplayedVariantType()));
 		BasicDBObject match = new BasicDBObject("$match", new BasicDBObject("$and", matchAndList));
-
-		String startFieldPath = VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE;
-		BasicDBObject sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, 1));
+		
 		BasicDBObject limit = new BasicDBObject("$limit", 1);
-		MongoCursor<Document> cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).iterator();
-		if (!cursor.hasNext()) {
-			if (progress != null)
-				progress.markAsComplete();
-			return false;	// no variant found matching filter
-		}
-		Document aggResult = (Document) cursor.next();
-		if (gsvdr.getDisplayedRangeMin() == null)
-			gsvdr.setDisplayedRangeMin((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; "));
+		String startFieldPath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
 
-		sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, -1));
-		cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).collation(IExportHandler.collationObj).iterator();
-		if (!cursor.hasNext()) {
-			if (progress != null)
-				progress.markAsComplete();
-			return false;	// no variant found matching filter
+		if (gsvdr.getDisplayedRangeMin() == null) {
+			BasicDBObject sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, 1));
+			MongoCursor<Document> cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).iterator();
+			if (!cursor.hasNext())
+				return false;	// no variant found matching filter
+
+			Document aggResult = (Document) cursor.next();
+			gsvdr.setDisplayedRangeMin((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; ", null));
 		}
-		aggResult = (Document) cursor.next();
-		if (gsvdr.getDisplayedRangeMax() == null)
-			gsvdr.setDisplayedRangeMax((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; "));
+
+		if (gsvdr.getDisplayedRangeMax() == null) {
+			BasicDBObject sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, -1));
+			MongoCursor<Document> cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).collation(IExportHandler.collationObj).iterator();
+			if (!cursor.hasNext())
+				return false;	// no variant found matching filter
+
+			Document aggResult = (Document) cursor.next();
+			gsvdr.setDisplayedRangeMax((Long) Helper.readPossiblyNestedField(aggResult, startFieldPath, "; ", null));
+		}
 		return true;
 	}
     
     public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
         long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
         ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "variant density on sequence " + gdr.getDisplayedSequence()});
@@ -136,22 +142,25 @@ public class VisualizationService {
         final ConcurrentHashMap<Long, Long> result = new ConcurrentHashMap<Long, Long>();
 
         if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
-            if (!findDefaultRangeMinMax(gdr, usedVarCollName, progress))
-                return result;
+            if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
+				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
+				return result;
+			}
 
         final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
         final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
         final ArrayList<Thread> threadsToWaitFor = new ArrayList<Thread>();
         final long rangeMin = gdr.getDisplayedRangeMin();
         final ProgressIndicator finalProgress = progress;
-
+        String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
+        
         for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++)
         {
             BasicDBList queryList = new BasicDBList();
-            queryList.add(new BasicDBObject(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence()));
+            queryList.add(new BasicDBObject(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence()));
             if (gdr.getDisplayedVariantType() != null)
                 queryList.add(new BasicDBObject(VariantData.FIELDNAME_TYPE, gdr.getDisplayedVariantType()));
-            String startSitePath = VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE;
+            String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
             queryList.add(new BasicDBObject(startSitePath, new BasicDBObject("$gte", gdr.getDisplayedRangeMin() + (i*intervalSize))));
             queryList.add(new BasicDBObject(startSitePath, new BasicDBObject(i < gdr.getDisplayedRangeIntervalCount() - 1 ? "$lt" : "$lte", i < gdr.getDisplayedRangeIntervalCount() - 1 ? gdr.getDisplayedRangeMin() + ((i+1)*intervalSize) : gdr.getDisplayedRangeMax())));
             if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
@@ -232,7 +241,7 @@ public class VisualizationService {
     public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
     	long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
 		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Fst estimate on sequence " + gdr.getDisplayedSequence()});
@@ -255,8 +264,10 @@ public class VisualizationService {
 		final ConcurrentHashMap<Long, Double> result = new ConcurrentHashMap<Long, Double>();
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
-			if (!findDefaultRangeMinMax(gdr, usedVarCollName, progress))
+			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
+				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
 				return result;
+			}
 
 		final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
 		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
@@ -267,16 +278,17 @@ public class VisualizationService {
 
 		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
+		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 
 		for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++) {
 			BasicDBObject initialMatchStage = new BasicDBObject();
-			initialMatchStage.put(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence());
+			initialMatchStage.put(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence());
 			if (gdr.getDisplayedVariantType() != null)
 				initialMatchStage.put(VariantData.FIELDNAME_TYPE, gdr.getDisplayedVariantType());
 			BasicDBObject positionSettings = new BasicDBObject();
 			positionSettings.put("$gte", gdr.getDisplayedRangeMin() + (i*intervalSize));
 			positionSettings.put(i < gdr.getDisplayedRangeIntervalCount() - 1 ? "$lt" : "$lte", i < gdr.getDisplayedRangeIntervalCount() - 1 ? gdr.getDisplayedRangeMin() + ((i+1)*intervalSize) : gdr.getDisplayedRangeMax());
-			String startSitePath = VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE;
+			String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
 			initialMatchStage.put(startSitePath, positionSettings);
 			if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
 				mergeVariantQueryDBList(initialMatchStage, variantQueryDBList);
@@ -430,7 +442,7 @@ public class VisualizationService {
     public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
 		long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
 		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Tajima's D on sequence " + gdr.getDisplayedSequence()});
@@ -454,24 +466,27 @@ public class VisualizationService {
 		final List<Map<Long, Double>> result = Arrays.asList(tajimaD, segregatingSites);
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
-			if (!findDefaultRangeMinMax(gdr, usedVarCollName, progress))
+			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
+				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
 				return result;
+			}
 
 		List<BasicDBObject> baseQuery = buildTajimaDQuery(gdr, useTempColl);
 
 		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
+		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 
 		for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++) {
 			BasicDBObject initialMatchStage = new BasicDBObject();
-			initialMatchStage.put(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence());
+			initialMatchStage.put(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence());
 			if (gdr.getDisplayedVariantType() != null)
 				initialMatchStage.put(VariantData.FIELDNAME_TYPE, gdr.getDisplayedVariantType());
 			BasicDBObject positionSettings = new BasicDBObject();
 			positionSettings.put("$gte", gdr.getDisplayedRangeMin() + (i*intervalSize));
 			positionSettings.put(i < gdr.getDisplayedRangeIntervalCount() - 1 ? "$lt" : "$lte", i < gdr.getDisplayedRangeIntervalCount() - 1 ? gdr.getDisplayedRangeMin() + ((i+1)*intervalSize) : gdr.getDisplayedRangeMax());
-			String startSitePath = VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE;
+			String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
 			initialMatchStage.put(startSitePath, positionSettings);
 			if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
 				mergeVariantQueryDBList(initialMatchStage, variantQueryDBList);
@@ -534,7 +549,7 @@ public class VisualizationService {
     private static final String GENOTYPE_DATA_S10_SAMPLEINDEX = "sx";
 
     private List<BasicDBObject> buildGenotypeDataQuery(GigwaDensityRequest gdr, boolean useTempColl, Map<String, List<GenotypingSample>> individualToSampleListMap, boolean keepPosition) {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -593,7 +608,7 @@ public class VisualizationService {
     		spkeyval.put(GENOTYPE_DATA_S7_SAMPLEID, new BasicDBObject("$toInt", "$" + GENOTYPE_DATA_S5_SPKEYVAL + ".k"));
     		spkeyval.put(GENOTYPE_DATA_S7_GENOTYPE, "$" + GENOTYPE_DATA_S5_SPKEYVAL + ".v.gt");
     		if (keepPosition)
-    			spkeyval.put(GENOTYPE_DATA_S7_POSITION, "$" + VariantData.FIELDNAME_REFERENCE_POSITION + ".ss");
+    			spkeyval.put(GENOTYPE_DATA_S7_POSITION, "$" + Assembly.getThreadBoundVariantRefPosPath() + ".ss");
     		pipeline.add(new BasicDBObject("$project", spkeyval));
 
     		// Stage 8 : Lookup samples
@@ -678,17 +693,17 @@ public class VisualizationService {
     private static final String FST_RES_POPULATIONS = "ps";
 
     private List<BasicDBObject> buildFstQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
         if (gdr.getDisplayedAdditionalGroups() == null) {
-        	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
-        	selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+        	selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
         } else {
         	for (Collection<String> group : gdr.getDisplayedAdditionalGroups()) {
-        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
         	}
         }
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
@@ -805,12 +820,12 @@ public class VisualizationService {
     private static final String TJD_RES_TAJIMAD = "tjd";
 
     private List<BasicDBObject> buildTajimaDQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
-    	String info[] = GigwaSearchVariantsRequest.getInfoFromId(gdr.getVariantSetId(), 2);
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<String> selectedIndividuals = new ArrayList<String>();
-        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(IGigwaService.ID_SEPARATOR))).collect(Collectors.toSet()));
+        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
@@ -837,11 +852,12 @@ public class VisualizationService {
         double e2 = c2 / (a1*a1 + a2);
 
     	List<BasicDBObject> pipeline = buildGenotypeDataQuery(gdr, useTempColl, individualToSampleListMap, true);
+    	String refPosPath = Assembly.getThreadBoundVariantRefPosPath();
 
     	// Stage 14 : Get the genotypes needed
     	BasicDBList genotypePaths = getFullPathToGenotypes(sModule, projId, selectedIndividuals, individualToSampleListMap);
     	BasicDBObject genotypeProjection = new BasicDBObject();
-    	genotypeProjection.put(VariantData.FIELDNAME_REFERENCE_POSITION, 1);
+    	genotypeProjection.put(refPosPath, 1);
     	genotypeProjection.put(TJD_S14_GENOTYPES, genotypePaths);
     	pipeline.add(new BasicDBObject("$project", genotypeProjection));
 
@@ -864,7 +880,7 @@ public class VisualizationService {
     	splitMapping.put("input", new BasicDBObject("$split", Arrays.asList("$" + TJD_S14_GENOTYPES, "/")));
     	splitMapping.put("in", new BasicDBObject("$toInt", "$$this"));
     	BasicDBObject splitProjection = new BasicDBObject();
-    	splitProjection.put(VariantData.FIELDNAME_REFERENCE_POSITION, 1);
+    	splitProjection.put(refPosPath, 1);
     	splitProjection.put(TJD_S18_GENOTYPE, new BasicDBObject("$map", splitMapping));
     	splitProjection.put(TJD_S15_SAMPLESIZE, 1);
     	pipeline.add(new BasicDBObject("$project", splitProjection));
@@ -878,7 +894,7 @@ public class VisualizationService {
     	alleleGroupId.put(TJD_S20_ALLELEID, "$" + TJD_S18_GENOTYPE);
     	BasicDBObject alleleGroup = new BasicDBObject();
     	alleleGroup.put("_id", alleleGroupId);
-    	alleleGroup.put(VariantData.FIELDNAME_REFERENCE_POSITION, new BasicDBObject("$first", "$" + VariantData.FIELDNAME_REFERENCE_POSITION));
+    	alleleGroup.put(VariantData.FIELDNAME_POSITIONS, new BasicDBObject("$first", "$" + refPosPath));
     	alleleGroup.put(TJD_S20_ALLELECOUNT, new BasicDBObject("$sum", 1));
     	alleleGroup.put(TJD_S15_SAMPLESIZE, new BasicDBObject("$first", "$" + TJD_S15_SAMPLESIZE));
     	pipeline.add(new BasicDBObject("$group", alleleGroup));
@@ -889,7 +905,7 @@ public class VisualizationService {
     	variantGroup.put(TJD_S20_ALLELECOUNT, new BasicDBObject("$first", "$" + TJD_S20_ALLELECOUNT));
     	variantGroup.put(TJD_S21_NUMALLELES, new BasicDBObject("$sum", 1));
     	variantGroup.put(TJD_S15_SAMPLESIZE, new BasicDBObject("$first", "$" + TJD_S15_SAMPLESIZE));
-    	variantGroup.put(VariantData.FIELDNAME_REFERENCE_POSITION, new BasicDBObject("$first", "$" + VariantData.FIELDNAME_REFERENCE_POSITION));
+    	variantGroup.put(VariantData.FIELDNAME_POSITIONS, new BasicDBObject("$first", "$" + VariantData.FIELDNAME_POSITIONS));
     	pipeline.add(new BasicDBObject("$group", variantGroup));
 
     	// Stage 22 : Keep only biallelic variants
@@ -902,7 +918,7 @@ public class VisualizationService {
     				new BasicDBObject("$multiply", Arrays.asList("$" + TJD_S15_SAMPLESIZE, 2))))));
     	alleleFrequency.put("in", new BasicDBObject("$multiply", Arrays.asList("$$freq", new BasicDBObject("$subtract", Arrays.asList(1, "$$freq")))));  // p(1-p)
     	BasicDBObject frequencyProjection = new BasicDBObject();
-    	frequencyProjection.put(VariantData.FIELDNAME_REFERENCE_POSITION, 1);
+    	frequencyProjection.put(VariantData.FIELDNAME_POSITIONS, 1);
     	frequencyProjection.put(TJD_S23_ALLELEFREQUENCY, new BasicDBObject("$let", alleleFrequency));
     	pipeline.add(new BasicDBObject("$project", frequencyProjection));
 
@@ -963,7 +979,7 @@ public class VisualizationService {
     public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr) throws Exception {
         long before = System.currentTimeMillis();
 
-        String info[] = GigwaSearchVariantsRequest.getInfoFromId(gvfpr.getVariantSetId(), 2);
+        String info[] = Helper.getInfoFromId(gvfpr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
@@ -986,7 +1002,7 @@ public class VisualizationService {
         final ConcurrentHashMap<Long, Integer> result = new ConcurrentHashMap<Long, Integer>();
 
         if (gvfpr.getDisplayedRangeMin() == null || gvfpr.getDisplayedRangeMax() == null)
-            if (!findDefaultRangeMinMax(gvfpr, usedVarCollName, progress))
+            if (!findDefaultRangeMinMax(gvfpr, usedVarCollName))
                 return result;
 
 		final int intervalSize = Math.max(1, (int) ((gvfpr.getDisplayedRangeMax() - gvfpr.getDisplayedRangeMin()) / gvfpr.getDisplayedRangeIntervalCount()));
@@ -1004,14 +1020,15 @@ public class VisualizationService {
         	sampleIDsGroupedBySortedIndividuals[k] = samplesByIndividual.get(ind).stream().map(sp -> sp.getId()).collect(Collectors.toList());
             k++;
 		}
-
+        
+        String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 		for (int i=0; i<gvfpr.getDisplayedRangeIntervalCount(); i++)
 		{
 			List<Criteria> crits = new ArrayList<Criteria>();
-			crits.add(Criteria.where(VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_SEQUENCE).is(gvfpr.getDisplayedSequence()));
+			crits.add(Criteria.where(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE).is(gvfpr.getDisplayedSequence()));
 			if (gvfpr.getDisplayedVariantType() != null)
 				crits.add(Criteria.where(VariantData.FIELDNAME_TYPE).is(gvfpr.getDisplayedVariantType()));
-			String startSitePath = VariantData.FIELDNAME_REFERENCE_POSITION + "." + ReferencePosition.FIELDNAME_START_SITE;
+			String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
 			crits.add(Criteria.where(startSitePath).gte(gvfpr.getDisplayedRangeMin() + (i*intervalSize)));
 			if (i < gvfpr.getDisplayedRangeIntervalCount() - 1)
 				crits.add(Criteria.where(startSitePath).lt(gvfpr.getDisplayedRangeMin() + ((i+1)*intervalSize)));
