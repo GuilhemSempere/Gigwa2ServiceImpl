@@ -1220,8 +1220,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (contentType != null && contentType.trim().length() > 0)
                     response.setContentType(contentType);
 
+                final Integer nAssembly = Assembly.getThreadBoundAssembly();
                 Thread exportThread = new SessionAttributeAwareThread(gsver.getRequest().getSession()) {
                     public void run() {
+                    	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                         try {
                             markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarCollName, variantQuery, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
