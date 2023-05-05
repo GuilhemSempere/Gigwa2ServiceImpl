@@ -1164,11 +1164,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             final OutputStream finalOS = os;
             ArrayList<GenotypingSample> samplesToExport = MgdbDao.getSamplesForProject(sModule, projId, individualsToExport);
+            final Integer nAssembly = Assembly.getThreadBoundAssembly();
             if (individualOrientedExportHandler != null)
             {
                 if (!progress.isAborted()) {
                     Thread exportThread = new SessionAttributeAwareThread(gsver.getRequest().getSession()) {
                         public void run() {
+                        	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
                                 progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
                                 progress.moveToNextStep();    // done with identifying variants
@@ -1220,7 +1222,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (contentType != null && contentType.trim().length() > 0)
                     response.setContentType(contentType);
 
-                final Integer nAssembly = Assembly.getThreadBoundAssembly();
                 Thread exportThread = new SessionAttributeAwareThread(gsver.getRequest().getSession()) {
                     public void run() {
                     	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
