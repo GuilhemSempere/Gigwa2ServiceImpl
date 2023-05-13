@@ -682,12 +682,16 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     
                     BasicDBList orMafMatch = new BasicDBList();
                     BasicDBList andMafMatch = new BasicDBList();
-                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", minmaf[g])));
-                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", maxmaf[g])));
+                    if (minmaf[g] > 0)
+                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", minmaf[g])));
+                    if (minmaf[g] < 50)
+                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", maxmaf[g])));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
                     andMafMatch = new BasicDBList();
-                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf[g].floatValue()))));
-                    andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf[g].floatValue()))));
+                    if (minmaf[g] > 0)
+                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf[g].floatValue()))));
+                    if (minmaf[g] < 50)
+                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf[g].floatValue()))));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
                     finalMatchList.add(new BasicDBObject("$or", orMafMatch));
                 }
@@ -719,26 +723,29 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         }
                     }
 
-                    if (fMostSameSelected || fDiscriminate) {
+                    if (fMostSameSelected || fDiscriminate) {	
                         BasicDBObject filter = new BasicDBObject("input", "$$gt" + g);
                         filter.put("as", "g");
                         filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$g", fIsMultiRunProject ? Arrays.asList("$$d") : "$$d")));
                         subIn.put("c" + g, new BasicDBObject("$map", new BasicDBObject("input", "$$d" + g).append("as", "d").append("in", new BasicDBObject("$size", new BasicDBObject("$filter", filter)))));
                         
-                        addFieldsVars.put("dgc" + g, new BasicDBObject("$max", "$r.c" + g));    // dominant genotype count
-                        Object minimumDominantGenotypeCount = new BasicDBObject("$multiply", Arrays.asList(new BasicDBObject("$subtract", new Object[] {selectedIndividuals[g].size(), "$r.m" + g}), mostSameRatio[g] / 100f));
+                        addFieldsVars.put("dgc" + g, new BasicDBObject("$max", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g));    // dominant genotype count
+                        Object minimumDominantGenotypeCount = new BasicDBObject("$multiply", Arrays.asList(new BasicDBObject("$subtract", new Object[] {selectedIndividuals[g].size(), "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g}), mostSameRatio[g] / 100f));
                         
                         if (fMostSameSelected)
                             addFieldsIn.put("ed" + g, new BasicDBObject("$gte", Arrays.asList("$$dgc" + g, minimumDominantGenotypeCount)));    // flag telling whether or not we have enough dominant genotypes to reach the required ratio
                         
                         if (fMissingDataApplied[g])
                         	addFieldsIn.put("m" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g);
+                        
+                        if (fMafApplied[g])
+                        	addFieldsIn.put("f" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".f" + g); 
 
                         if (fDiscriminate && g == 1) {
                             addFieldsIn.put("dd", new BasicDBObject("$and", Arrays.asList(    /* dd (different dominant) set to true if both groups have exactly one dominant genotype and each group's dominant genotype differs from the other's */
-                                new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$r.c" + 0).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + 0, "$$this"))))))),
-                                new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$r.c" + g).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + g, "$$this"))))))),
-                                new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$r.d" + 0, new BasicDBObject("$indexOfArray", Arrays.asList("$r.c" + 0, "$$dgc" + 0)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$r.d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$r.c" + g, "$$dgc" + g))))))
+                                new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + 0).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + 0, "$$this"))))))),
+                                new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + g, "$$this"))))))),
+                                new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + 0, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + 0, "$$dgc" + 0)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g, "$$dgc" + g))))))
                             )));
 
                             finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dd", true));
@@ -752,9 +759,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             
             if (fHezRatioApplied[g]) {
                 BasicDBList condList = new BasicDBList();
-                condList.add(new BasicDBObject("$eq", new Object[] {"$r.m" + g, selectedIndividuals[g].size()}));
+                condList.add(new BasicDBObject("$eq", new Object[] {"$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g, selectedIndividuals[g].size()}));
                 condList.add(0);
-                condList.add(new BasicDBObject("$divide", Arrays.asList(new BasicDBObject("$multiply", new Object[] {"$r.he" + g, 100}), new BasicDBObject("$subtract", new Object[] {selectedIndividuals[g].size(), "$r.m" + g}))));
+                condList.add(new BasicDBObject("$divide", Arrays.asList(new BasicDBObject("$multiply", new Object[] {"$" + MAIN_RESULT_PROJECTION_FIELD + ".he" + g, 100}), new BasicDBObject("$subtract", new Object[] {selectedIndividuals[g].size(), "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g}))));
                 addFieldsIn.put("hef" + g, new BasicDBObject("$cond", condList)); // heterozygous frequency
             }
 
