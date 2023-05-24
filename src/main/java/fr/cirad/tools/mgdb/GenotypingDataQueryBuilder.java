@@ -115,8 +115,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     /** The individual index to sample list map. */
     private TreeMap<String /*individual*/, ArrayList<GenotypingSample>>[] individualToSampleListMap = new TreeMap[2];
     
-    /** The n total variant count. */
-    private long nTotalVariantCount = 0;
+    /** The total chunk count. */
+    private long nTotalChunkCount = 0;
     
     private int nNextCallCount = 0;
     
@@ -282,11 +282,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             fDiscriminate = gsvr.isDiscriminate();
         }
         
-        this.nTotalVariantCount = Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
-        if (this.nTotalVariantCount == 1)
+        this.nTotalChunkCount = Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
+        if (this.nTotalChunkCount == 1)
         {
             MgdbDao.prepareDatabaseForSearches(sModule);    // list does not exist: create it
-            this.nTotalVariantCount = Helper.estimDocCount(mongoTemplate,MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
+            this.nTotalChunkCount = Helper.estimDocCount(mongoTemplate,MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         }
         this.taggedVariantList = mongoTemplate.findAll(Map.class, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS);
         
@@ -343,7 +343,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
      */
     public int getNumberOfQueries()
     {
-        return (int) nTotalVariantCount;
+        return (int) nTotalChunkCount;
     }
 
     /* (non-Javadoc)
