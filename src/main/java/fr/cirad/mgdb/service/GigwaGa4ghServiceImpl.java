@@ -146,6 +146,7 @@ import fr.cirad.tools.mongo.MongoTemplateManager;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
 import htsjdk.variant.variantcontext.GenotypeLikelihoods;
+import htsjdk.variant.variantcontext.VariantContext.Type;
 import htsjdk.variant.vcf.VCFCompoundHeaderLine;
 import htsjdk.variant.vcf.VCFConstants;
 import htsjdk.variant.vcf.VCFFilterHeaderLine;
@@ -238,14 +239,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public LinkedHashSet<String> getProjectVariantTypes(String sModule, int projId) {
-
-        MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Query q = new Query();
-        q.fields().include(GenotypingProject.FIELDNAME_VARIANT_TYPES);
-        q.addCriteria(Criteria.where("_id").is(projId));
-        GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
-        return proj.getVariantTypes();
+    public Collection<String> getProjectVariantTypes(String sModule, Integer projId) {
+    	return MgdbDao.getVariantTypes(MongoTemplateManager.get(sModule), projId);
     }
 
     @Override
@@ -383,10 +378,38 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 }
                 variantFeatureFilterList.add(orSelectedVariantTypesList);
             }
+            
+            String refPosPath = Assembly.getThreadBoundVariantRefPosPath();
+           
+            /* Step to match variants by position */
+            ArrayList<BasicDBObject> posOrList = new ArrayList<>();
+            ArrayList<String> leftBounds = new ArrayList<>() {{ add(refPosPath + "." + ReferencePosition.FIELDNAME_START_SITE); }};
+            Collection<String> variantTypes = getProjectVariantTypes(sModule, projId);
+            if (variantTypes.size() != 1 || !Type.SNP.toString().equals(variantTypes.iterator().next()))
+            	leftBounds.add(refPosPath + "." + ReferencePosition.FIELDNAME_END_SITE);	// only add this part if the project contains non-SNP variants (otherwise it unnecessarily complexifies & slows down query execution)
+            
+            for (String leftBound : leftBounds) {
+            	ArrayList<BasicDBObject> posAndList = new ArrayList<>();
 
-            /* Step to match variants position range for visualization (differs from the 2 next, which is for defining the subset of data Gigwa is currently working with: it they are contradictory it still makes sense and means user is trying to view variants outside the range selected in Gigwa) */
+                /* match variants that have a position included in the specified range */
+                if (gsvr.getStart() != null && gsvr.getStart() != -1)
+                	posAndList.add(new BasicDBObject(leftBound, new BasicDBObject("$gte", gsvr.getStart())));
+                if (gsvr.getEnd() != null && gsvr.getEnd() != -1)
+                	posAndList.add(new BasicDBObject(refPosPath + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$lte", gsvr.getEnd())));
+                
+                /* match selected chromosomes */
+                if (selectedSequences != null && selectedSequences.size() > 0 && selectedSequences.size() != getProjectSequences(sModule, projId).size())
+                	posAndList.add(new BasicDBObject(refPosPath + "." + ReferencePosition.FIELDNAME_SEQUENCE, new BasicDBObject("$in", selectedSequences)));
+                
+                if (!posAndList.isEmpty())
+                	posOrList.add(new BasicDBObject("$and", posAndList));
+            }
+            if (!posOrList.isEmpty())
+            	variantFeatureFilterList.add(new BasicDBObject("$or", posOrList));
+            
+            /* Step to match variants position range for visualization (differs from the above, which is for defining the subset of data Gigwa is currently working with: it they are contradictory it still makes sense and means user is trying to view variants outside the range selected in Gigwa) */
             if (GigwaDensityRequest.class.isAssignableFrom(gsvr.getClass())) {
-                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, ((GigwaDensityRequest) gsvr).getDisplayedSequence()));
+                variantFeatureFilterList.add(new BasicDBObject(refPosPath + "." + ReferencePosition.FIELDNAME_SEQUENCE, ((GigwaDensityRequest) gsvr).getDisplayedSequence()));
 
                 BasicDBObject posCrit = new BasicDBObject();
                 Long min = ((GigwaDensityRequest) gsvr).getDisplayedRangeMin(), max = ((GigwaDensityRequest) gsvr).getDisplayedRangeMax();
@@ -395,27 +418,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (max != null && max != -1)
                     posCrit.put("$lte", max);
                 if (!posCrit.isEmpty())
-                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, posCrit));
+                variantFeatureFilterList.add(new BasicDBObject(refPosPath + "." + ReferencePosition.FIELDNAME_START_SITE, posCrit));
             }
-
-            /* Step to match selected chromosomes */
-            if (selectedSequences != null && selectedSequences.size() > 0 && selectedSequences.size() != getProjectSequences(sModule, projId).size()) {
-                variantFeatureFilterList.add(new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE, new BasicDBObject("$in", selectedSequences)));
-            }
-
-            /* Step to match variants that have a position included in the specified range */
-            if ((gsvr.getStart() != null && gsvr.getStart() != -1) || (gsvr.getEnd() != null && gsvr.getEnd() != -1)) {
-                BasicDBObject posCrit = new BasicDBObject();
-                if (gsvr.getStart() != null && gsvr.getStart() != -1)
-                    posCrit.put("$or", Arrays.asList(
-                    	new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$gte", gsvr.getStart())), 
-                		new BasicDBObject(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_END_SITE, new BasicDBObject("$gte", gsvr.getStart()))
-                	));
-                if (gsvr.getEnd() != null && gsvr.getEnd() != -1)
-                    posCrit.put(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE, new BasicDBObject("$lte", gsvr.getEnd()));
-                variantFeatureFilterList.add(posCrit);
-            }
-
+            
             /* Step to match selected number of alleles */
             if (alleleCountList != null) {
                 BasicDBList orList3 = new BasicDBList();
@@ -427,7 +432,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 }
                 variantFeatureFilterList.add(orSelectedNumberOfAllelesList);
             }
-
             if (!variantFeatureFilterList.isEmpty())
                 queries.add(variantFeatureFilterList);
         }
