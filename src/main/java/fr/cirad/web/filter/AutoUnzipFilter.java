@@ -106,7 +106,7 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 	    		if (fileName.endsWith("." + extension))
 	    		{
 	    			LOG.debug("Sending file " + fileName + " from archive " + f.getName() + " into response");
-					response.setContentType("application/octet-stream;charset=ISO-8859-1");
+//					response.setContentType("application/octet-stream;charset=ISO-8859-1");
 					((HttpServletResponse) response).setHeader("Content-disposition", "inline; filename=" + fileName);
 	            	int len;
 		            while ((len = zis.read(buffer)) > 0)
