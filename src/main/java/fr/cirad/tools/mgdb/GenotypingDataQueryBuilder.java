@@ -457,8 +457,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     fOr[g] = true;
                     cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX.length());
                 }
-                else
-                	LOG.error("Unknown filter operator: " + cleanOperator[g]);
             }
 
             int nMaxNumberOfAllelesForOneVariant = maxAlleleCount > 0 ? maxAlleleCount : genotypingProject.getAlleleCounts().last(), nPloidy = genotypingProject.getPloidyLevel();
@@ -735,7 +733,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         if (fMostSameSelected)
                             addFieldsIn.put("ed" + g, new BasicDBObject("$gte", Arrays.asList("$$dgc" + g, minimumDominantGenotypeCount)));    // flag telling whether or not we have enough dominant genotypes to reach the required ratio
                         
-                        if (fMissingDataApplied[g])
+                        if (fMissingDataApplied[g] || fMostSameSelected)
                         	addFieldsIn.put("m" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g);
                         
                         if (fMafApplied[g])
