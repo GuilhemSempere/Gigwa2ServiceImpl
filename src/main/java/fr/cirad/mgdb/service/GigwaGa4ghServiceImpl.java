@@ -2339,6 +2339,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         Query q = new Query();
         q.fields().include(GenotypingProject.FIELDNAME_NAME);
         q.fields().include(GenotypingProject.FIELDNAME_DESCRIPTION);
+        q.fields().include(GenotypingProject.FIELDNAME_TECHNOLOGY);
         List<GenotypingProject> listProj = MongoTemplateManager.get(module).find(q, GenotypingProject.class);
         List<VariantSet> listVariantSet = new ArrayList<>();
 
@@ -2366,20 +2367,25 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             GenotypingProject proj = listProj.get(i);
             String projId = Integer.toString(proj.getId());
             List<VariantSetMetadata> metadata = getMetadataList(module, projId);
-            if (proj.getDescription() != null)
-            {
+            if (proj.getDescription() != null) {
                 VariantSetMetadata vsmd = new VariantSetMetadata();
                 vsmd.setKey(AbstractVariantData.VCF_CONSTANT_DESCRIPTION);
                 vsmd.setValue(proj.getDescription());
                 metadata.add(vsmd);
             }
+            if (proj.getTechnology() != null && !proj.getTechnology().isEmpty()) {
+                VariantSetMetadata vsmd = new VariantSetMetadata();
+                vsmd.setKey(Constants.GENOTYPING_TECHNOLOGY);
+                vsmd.setValue(proj.getTechnology());
+                metadata.add(vsmd);
+            }
             VariantSet variantSet = VariantSet.newBuilder()
-                    .setId(Helper.createId(module, projId))
-                    .setReferenceSetId(module)
-                    .setDatasetId(module)
-                    .setName(listProj.get(i).getName())
-                    .setMetadata(metadata) // get the metadata from vcf header
-                    .build();
+                .setId(Helper.createId(module, projId))
+                .setReferenceSetId(module)
+                .setDatasetId(module)
+                .setName(proj.getName())
+                .setMetadata(metadata) // get the metadata from vcf header
+                .build();
             listVariantSet.add(variantSet);
         }
         response = SearchVariantSetsResponse.newBuilder()
