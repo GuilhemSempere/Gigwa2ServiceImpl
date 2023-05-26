@@ -148,6 +148,8 @@ import fr.cirad.tools.ProgressIndicator;
 import fr.cirad.tools.SessionAttributeAwareThread;
 import fr.cirad.tools.mgdb.GenotypingDataQueryBuilder;
 import fr.cirad.tools.mongo.MongoTemplateManager;
+import fr.cirad.tools.query.GroupedBlockingQueue;
+import fr.cirad.tools.query.GroupedExecutor;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
 import htsjdk.variant.variantcontext.GenotypeLikelihoods;
@@ -224,7 +226,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      */
     static protected NumberFormat nf = NumberFormat.getInstance();
     
-    static protected ExecutorService executor;
+    static protected GroupedExecutor executor;
     
     static {
         nf.setMaximumFractionDigits(4);
@@ -234,11 +236,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         annotationField.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + 1, "$" + VariantRunData.SECTION_ADDITIONAL_INFO);
     }
 
-	private ExecutorService getExecutor() {
+	private GroupedExecutor getExecutor() {
 		if (executor == null) {
 			int n = getMaxQueryThreads();
-			LOG.debug("maxQueryThreads: " + n);
-			executor = Executors.newFixedThreadPool(n);
+			LOG.info("maxQueryThreads: " + n);
+//			executor = Executors.newFixedThreadPool(n);
+			executor = new GroupedExecutor(5, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());
 		}
 		return executor;
 	}
@@ -271,14 +274,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public LinkedHashSet<String> getProjectVariantTypes(String sModule, int projId) {
-
-        MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Query q = new Query();
-        q.fields().include(GenotypingProject.FIELDNAME_VARIANT_TYPES);
-        q.addCriteria(Criteria.where("_id").is(projId));
-        GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
-        return proj.getVariantTypes();
+    public Collection<String> getProjectVariantTypes(String sModule, Integer projId) {
+    	return MgdbDao.getVariantTypes(MongoTemplateManager.get(sModule), projId);
     }
 
     @Override
@@ -422,7 +419,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             /* Step to match variants by position */
             ArrayList<BasicDBObject> posOrList = new ArrayList<>();
             ArrayList<String> leftBounds = new ArrayList<>() {{ add(refPosPath + "." + ReferencePosition.FIELDNAME_START_SITE); }};
-            LinkedHashSet<String> variantTypes = getProjectVariantTypes(sModule, projId);
+            Collection<String> variantTypes = getProjectVariantTypes(sModule, projId);
             if (variantTypes.size() != 1 || !Type.SNP.toString().equals(variantTypes.iterator().next()))
             	leftBounds.add(refPosPath + "." + ReferencePosition.FIELDNAME_END_SITE);	// only add this part if the DB contains non-SNP variants (otherwise it unnecessarily slows down query execution)
             
@@ -470,8 +467,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 }
                 variantFeatureFilterList.add(orSelectedNumberOfAllelesList);
             }
-            if (!variantFeatureFilterList.isEmpty())
+            if (!variantFeatureFilterList.isEmpty()) {
                 queries.add(variantFeatureFilterList);
+                System.err.println(variantFeatureFilterList);
+            }
         }
         else {    // filtering on variant IDs: we might need to split the query in order to avoid reaching a 16Mb document size
             int step = selectedVariantIds.size() / QUERY_IDS_CHUNK_SIZE;
@@ -725,7 +724,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                         };
 
-                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(queryThread));
+                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(progress.getProcessId(), queryThread));
 //                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
 //                            threadsToWaitFor.add(queryThread); // only needed to have an accurate count
 //                            queryThread.run();    // run synchronously
@@ -1041,7 +1040,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            }
 	                        };
 	
-	                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(queryThread));
+	                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(progress.getProcessId(), queryThread));
 	
 	//	                        executor.execute(queryThread);
 	//	                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
@@ -1083,7 +1082,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                            partialCountArrayToFill[j] = tmpVarColl.countDocuments(new BasicDBObject("$and", rangesToCount.get(j)));
 	                                        }
 	                                    };
-	                                    threadsToWaitFor.add((Future<Void>) getExecutor().submit(countThread));
+	                                    threadsToWaitFor.add((Future<Void>) getExecutor().submit(progress.getProcessId(), countThread));
 	
 	//	                                    if (j % nNConcurrentThreads*2 == 0 || j == rangesToCount.size() - 1) {
 	//	                                        for (Thread t : threadsToWaitFor)
