@@ -19,6 +19,7 @@ package fr.cirad.web.filter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -95,10 +96,11 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 			
 			((HttpServletResponse) response).addHeader("Access-Control-Allow-Origin", hsRequest.getHeader("Origin"));
 			String acceptEncoding = hsRequest.getHeader("Accept-Encoding");
-			if (acceptEncoding != null && acceptEncoding.contains("gzip"))
+			boolean fDoGzipCompression = acceptEncoding != null && acceptEncoding.contains("gzip");
+			if (fDoGzipCompression)
 				((HttpServletResponse) response).setHeader("Content-Encoding", "gzip");
 
-			GZIPOutputStream os = new GZIPOutputStream(response.getOutputStream());
+			OutputStream os = fDoGzipCompression ? new GZIPOutputStream(response.getOutputStream()) : response.getOutputStream();
 			byte[] buffer = new byte[1024];
 	    	while (ze!=null)
 	    	{
