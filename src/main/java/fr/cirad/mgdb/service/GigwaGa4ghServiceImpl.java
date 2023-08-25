@@ -1567,10 +1567,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         fields.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, 1);
 
         // get the genotype for wanted individuals/callSet only
-        final Map<Integer, String> sampleIdToIndividualMap = new HashMap<>();
+        boolean fGotMultiSampleIndividuals = false;
+        HashSet<String> involvedIndividuals = new HashSet<>();
         for (GenotypingSample sample : samples){
             fields.put(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + sample.getId(), 1);
-            sampleIdToIndividualMap.put(sample.getId(), sample.getIndividual());
+            if (!involvedIndividuals.add(sample.getIndividual()))
+            	fGotMultiSampleIndividuals = true;
         }
 
         BasicDBList matchAndList = new BasicDBList();
@@ -1606,8 +1608,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         Map<String, Object> callMap = (Map<String, Object>) variantObj.get(key);
 
                         // for each individual/CallSet
-                        for (Integer sampleId : sampleIdToIndividualMap.keySet()) {
-                            Document callObj = (Document) callMap.get("" + sampleId);
+                        for (GenotypingSample sample : samples) {
+                            Document callObj = (Document) callMap.get("" + sample.getId());
                             double[] gl;
                             List<Double> listGL = new ArrayList<>();
 
@@ -1663,8 +1665,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                     }
                                 }
                             }
+                            
+                            if (fGotMultiSampleIndividuals)
+                            	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
                             Call call = Call.newBuilder()
-                                    .setCallSetId(Helper.createId(module, projId, sampleIdToIndividualMap.get(sampleId)))
+                                    .setCallSetId(Helper.createId(module, projId, sample.getIndividual()))
                                     .setGenotype(genotype)
                                     .setGenotypeLikelihood(listGL)
                                     .setPhaseset(phaseSet)
