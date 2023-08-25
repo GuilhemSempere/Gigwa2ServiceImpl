@@ -26,7 +26,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.apache.commons.math.util.MathUtils;
@@ -143,7 +142,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     
     private boolean fExcludeVariantsWithOnlyMissingData = false;
     
-    private Document projectionFields;
+    private Document projectionFields = new Document();
 
     /** The Constant AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX. */
     static final public String AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX = "_ALL_"; // used to differentiate aggregation query with $and operator 
@@ -259,9 +258,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         this.maxHeZ[0] = gsvr.getMaxHeZ();
         this.minmaf[0] = gsvr.getMinMaf();
         this.maxmaf[0] = gsvr.getMaxMaf();
-        final AtomicInteger nSampleCount = new AtomicInteger(0);
         this.individualToSampleListMap[0] = MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals[0]);
-        this.individualToSampleListMap[0].values().stream().map(spList -> nSampleCount.addAndGet(spList.size()));
         
         filteredGroups = getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsvr, false);
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
@@ -278,7 +275,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             this.minmaf[1] = gsvr.getMinMaf2();
             this.maxmaf[1] = gsvr.getMaxMaf2();
             this.individualToSampleListMap[1] = MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals[1]);
-            this.individualToSampleListMap[1].values().stream().map(spList -> nSampleCount.addAndGet(spList.size()));
             fDiscriminate = gsvr.isDiscriminate();
         }
         
@@ -289,28 +285,18 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             this.nTotalChunkCount = Helper.estimDocCount(mongoTemplate,MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         }
         this.taggedVariantList = mongoTemplate.findAll(Map.class, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS);
-        
+
         intervalIndexList = new ArrayList<>();
         for (int i=0; i<=taggedVariantList.size(); i++)
             intervalIndexList.add(i);
-        
-        this.projectionFields = new Document();
-        fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
-        if (!fForCounting || fIsMultiRunProject) {
-            for (ArrayList<GenotypingSample> samplesForAGivenIndividual : individualToSampleListMap[0].values()) {
-                if (samplesForAGivenIndividual.size() > 1) {
-                    fGotMultiSampleIndividuals = true;
-                    break;
-                }
-            }
-            if (!fGotMultiSampleIndividuals && filteredGroups.contains(1))
-                for (ArrayList<GenotypingSample> samplesForAGivenIndividual : individualToSampleListMap[1].values()) {
-                    if (samplesForAGivenIndividual.size() > 1) {
-                        fGotMultiSampleIndividuals = true;
-                        break;
-                    }
-                }
 
+        fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
+
+        for (TreeMap<String, ArrayList<GenotypingSample>> groupIndSamples : individualToSampleListMap)
+        	if (groupIndSamples != null && groupIndSamples.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent())
+        		fGotMultiSampleIndividuals = true;
+
+        if (!fForCounting || fIsMultiRunProject) {
             List<GenotypingSample> involvedSamples = individualToSampleListMap[0].values().stream().flatMap(List::stream).collect(Collectors.toList());
             if (filteredGroups.contains(1))
                 involvedSamples.addAll(individualToSampleListMap[1].values().stream().flatMap(List::stream).collect(Collectors.toList()));
@@ -536,7 +522,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 List<GenotypingSample> individualSamples = individualToSampleListMap[g].get(ind);
                 for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
                     GenotypingSample individualSample = individualSamples.get(k);
-                    Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES/* + (int) ((individualSample.getId() - 1) / 100)*/ + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
+                    Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
                     if (fNeedGtArray && fIsMultiRunProject)
                         groupFields.put(SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId(), new BasicDBObject("$addToSet", fullPathToGT));
                     individualSampleGenotypeList.add("$" + SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId());
