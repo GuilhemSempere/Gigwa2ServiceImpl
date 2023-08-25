@@ -42,7 +42,6 @@ import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
 import fr.cirad.model.GigwaDensityRequest;
-import fr.cirad.model.GigwaSearchVariantsRequest;
 import fr.cirad.model.GigwaVcfFieldPlotRequest;
 import fr.cirad.tools.Helper;
 import fr.cirad.tools.ProgressIndicator;
@@ -557,15 +556,7 @@ public class VisualizationService {
         GenotypingProject genotypingProject = mongoTemplate.findById(Integer.valueOf(projId), GenotypingProject.class);
 
         boolean fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
-        boolean fGotMultiSampleIndividuals = false;
-
-
-        for (List<GenotypingSample> samplesForAGivenIndividual : individualToSampleListMap.values()) {
-            if (samplesForAGivenIndividual.size() > 1) {
-                fGotMultiSampleIndividuals = true;
-                break;
-            }
-        }
+        boolean fGotMultiSampleIndividuals = (individualToSampleListMap.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent());
 
     	List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
 
