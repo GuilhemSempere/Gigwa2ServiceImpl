@@ -85,6 +85,7 @@ import org.ga4gh.methods.VariantMethods;
 import org.ga4gh.models.AlleleLocation;
 import org.ga4gh.models.AnalysisResult;
 import org.ga4gh.models.Call;
+import org.ga4gh.models.Call.Builder;
 import org.ga4gh.models.CallSet;
 import org.ga4gh.models.HGVSAnnotation;
 import org.ga4gh.models.OntologyTerm;
@@ -1588,8 +1589,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         HashSet<String> variantsForWhichAnnotationWasRetrieved = new HashSet<>();
 
         MongoCursor<Document> genotypingDataCursor = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(pipeline).allowDiskUse(isAggregationAllowedToUseDisk()).iterator();
-        while (genotypingDataCursor.hasNext())
-        {
+        if (!genotypingDataCursor.hasNext())
+        	for (Comparable varId : varMap.keySet()) {	// create empty Call documents for all requested variants
+                Variant var = varMap.get(varId);
+                TreeSet<Call> calls = new TreeSet(new AlphaNumericComparator<Call>());    // for automatic sorting
+                Builder emptyCall = Call.newBuilder().setGenotype(new ArrayList<>());
+        		for (GenotypingSample sample : samples) {
+        			emptyCall.setCallSetId(Helper.createId(module, projId, sample.getIndividual()));
+                    calls.add(emptyCall.build());
+	        	}
+            	var.setCalls(new ArrayList<Call>(calls));	// add the call list
+	        }
+        else while (genotypingDataCursor.hasNext()) {
             Document variantObj = genotypingDataCursor.next();
             String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, "; ", null);
             Variant var = varMap.get(varId);
@@ -1706,8 +1717,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         break;
                 }
             }
-            // add the call list
-            var.setCalls(new ArrayList<Call>(calls));
+            var.setCalls(new ArrayList<Call>(calls));	// add the call list
         }
 
 //        LOG.debug("getVariantListFromDBCursor took " + (System.currentTimeMillis() - before) / 1000f + "s for " + varMap.size() + " variants and " + samples.size() + " samples");
