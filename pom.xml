@@ -19,7 +19,7 @@
         <dependency>
             <groupId>fr.cirad</groupId>
             <artifactId>Gigwa2ServiceInterface</artifactId>
-            <version>2.6.1-RELEASE</version>           
+            <version>2.6.2-RELEASE</version>           
         </dependency>
         
 		<dependency>
