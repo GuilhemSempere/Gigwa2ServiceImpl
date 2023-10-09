@@ -924,8 +924,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static public List<Integer> getGroupsForWhichToFilterOnGenotypingOrAnnotationData(GigwaSearchVariantsRequest gsvr, boolean fConsiderFielThresholds)
     {
         List<Integer> result = getGroupsForWhichToFilterOnGenotypingData(gsvr, fConsiderFielThresholds);
-        
-        if (result.size() == 0 && (Helper.estimDocCount(Helper.getInfoFromId(gsvr.getVariantSetId(), 2)[0], GenotypingProject.class) != 1 || gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
+ 
+        if (result.size() == 0 && (gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
             result.add(0);    // needed at least for filtering on annotation data or distinguish records according to project id
 
         /*FIXME: this should also force filtering on VRD in cases where only some runs of the selected project are involved*/

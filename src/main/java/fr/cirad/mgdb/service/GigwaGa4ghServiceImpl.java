@@ -128,6 +128,7 @@ import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
 import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
+import fr.cirad.mgdb.model.mongo.subtypes.Run;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
@@ -349,7 +350,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public Collection<BasicDBList> buildVariantDataQuery(GigwaSearchVariantsRequest gsvr, List<String> externallySelectedSeqs, boolean fForBrowsing) {
+    public Collection<BasicDBList> buildVariantDataQuery(GigwaSearchVariantsRequest gsvr, List<String> externallySelectedSeqs, boolean fForBrowsing, Class<?> entityClass) {
         String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
@@ -368,6 +369,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         if (selectedVariantIds == null || fForBrowsing) {
             BasicDBList variantFeatureFilterList = new BasicDBList();
+            
+            //Filter on project
+            if (entityClass.equals(VariantData.class)) {
+                variantFeatureFilterList.add(new BasicDBObject(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_PROJECT_ID, projId));
+            } else {
+                variantFeatureFilterList.add(new BasicDBObject("_id." + Run.FIELDNAME_PROJECT_ID, projId));
+            }
+            
             /* Step to match selected variant types */
             if (selectedVariantTypes != null && selectedVariantTypes.size() > 0) {
                 BasicDBList orList1 = new BasicDBList();
@@ -540,17 +549,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             MongoCollection<Document> varColl = mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantData.class));
             List<Integer> filteredGroups = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsvr, false);
-            Collection<BasicDBList> variantQueryDBListColl = buildVariantDataQuery(gsvr, !fGotTokenManager ? null : getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), sModule), false);
+            Collection<BasicDBList> variantQueryDBListColl = buildVariantDataQuery(gsvr, !fGotTokenManager ? null : getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), sModule), false, VariantData.class);
 
-            if (variantQueryDBListColl.isEmpty()) {
-                if (filteredGroups.size() == 0 && mongoTemplate.count(new Query(), GenotypingProject.class) == 1)
+            if (filteredGroups.isEmpty()) { // filtering on variant features only: we just need a count
+                if (variantQueryDBListColl.isEmpty()) {
                     count = mongoTemplate.count(new Query(), VariantData.class);    // no filter whatsoever
-            }
-            else if (filteredGroups.size() == 0) {    // filtering on variant features only: we just need a count
-                count = 0l;
-                count = variantQueryDBListColl.parallelStream()
-                        .map(req -> varColl.countDocuments(new BasicDBObject("$and", req)))
-                        .reduce(count, (accumulator, _item) -> accumulator + _item);
+                } else {
+                    count = 0l;
+                    count = variantQueryDBListColl.parallelStream()
+                            .map(req -> varColl.countDocuments(new BasicDBObject("$and", req)))
+                            .reduce(count, (accumulator, _item) -> accumulator + _item);
+                }
             }
 
             if (count != null)
@@ -560,7 +569,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 boolean fPreFilterOnVarColl = false, fMongoOnSameServer = MongoTemplateManager.isModuleOnLocalHost(sModule);
 
                 //in this case, there is only one variantQueryDBList (no filtering on variant ids)
-                BasicDBList variantQueryDBList = !variantQueryDBListColl.isEmpty() ? variantQueryDBListColl.iterator().next() : new BasicDBList();
+                Collection<BasicDBList> variantRunQueryDBListColl = buildVariantDataQuery(gsvr, !fGotTokenManager ? null : getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), sModule), false, VariantRunData.class);
+
+                BasicDBList variantQueryDBList = !variantRunQueryDBListColl.isEmpty() ? variantRunQueryDBListColl.iterator().next() : new BasicDBList();
 
                 if (variantQueryDBList.size() > 0)
                 {
@@ -794,15 +805,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         LOG.debug((partialCountArray == null ? "new" : "existing") + " queryKey hash: " + queryKey);
 
         List<Integer> filteredGroups = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsvr, false);
-        boolean fNeedToCreateTempColl = !filteredGroups.isEmpty() || (gsvr.getSelectedVariantIds() != null && !gsvr.getSelectedVariantIds().isEmpty());        
+        boolean fNeedToCreateTempColl = !filteredGroups.isEmpty() 
+                || (gsvr.getSelectedVariantIds() != null && !gsvr.getSelectedVariantIds().isEmpty())
+                || Helper.estimDocCount(Helper.getInfoFromId(gsvr.getVariantSetId(), 2)[0], GenotypingProject.class) > 1;        
 
         long before = System.currentTimeMillis();
 
         if (fNeedToCreateTempColl) {
             final MongoCollection<Document> tmpVarColl = getTemporaryVariantCollection(sModule, progress.getProcessId(), true);
-            Collection<BasicDBList> variantQueryDBListColl = buildVariantDataQuery(gsvr, getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), sModule), false);
+            Collection<BasicDBList> variantQueryDBListColl = buildVariantDataQuery(gsvr, getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), sModule), false, VariantData.class);
 
-	        if (filteredGroups.isEmpty()) {	// filtering by variant IDs
+	        if (filteredGroups.isEmpty()) {	// filtering on Variant collection (filtering on variant IDs or run)
 	            MongoCollection<Document> varColl = mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantData.class));
 	            final AtomicInteger nProcessedChunkCount = new AtomicInteger(0);
 	
@@ -818,9 +831,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	        else {   // filter on genotyping data
 	            final ArrayList<Thread> threadsToWaitFor = new ArrayList<>();
 	            final AtomicInteger finishedThreadCount = new AtomicInteger(0);
-	
+                    
+                    Collection<BasicDBList> variantRunQueryDBListColl = buildVariantDataQuery(gsvr, getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), sModule), false, VariantRunData.class);
+
 	            //in this case, there is only one variantQueryDBList (no filtering on variant ids)
-	            BasicDBList variantQueryDBList = !variantQueryDBListColl.isEmpty() ? variantQueryDBListColl.iterator().next() : new BasicDBList();
+	            BasicDBList variantQueryDBList = !variantRunQueryDBListColl.isEmpty() ? variantRunQueryDBListColl.iterator().next() : new BasicDBList();
 	
 	            final GenotypingDataQueryBuilder genotypingDataQueryBuilder = new GenotypingDataQueryBuilder(gsvr, variantQueryDBList, false);
 	
@@ -1081,7 +1096,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         long count = countVariants(gsver, true);
         MongoCollection<Document> tmpVarColl = getTemporaryVariantCollection(sModule, token, false);
         long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
-        Collection<BasicDBList> variantQueryDBListColl = buildVariantDataQuery(gsver, getSequenceIDsBeingFilteredOn(gsver.getRequest().getSession(), sModule), true);
+        Collection<BasicDBList> variantQueryDBListColl = buildVariantDataQuery(gsver, getSequenceIDsBeingFilteredOn(gsver.getRequest().getSession(), sModule), true, VariantRunData.class);
         final BasicDBList variantQueryDBList = variantQueryDBListColl.size() == 1 ? variantQueryDBListColl.iterator().next() : new BasicDBList();
 
         if (nGroupsToFilterGenotypingDataOn > 0 && nTempVarCount == 0)
@@ -2481,7 +2496,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     if (gsvr.getSelectedVariantIds() != null && tempVarColl.countDocuments() > 0) {
                         iterable = tempVarColl.find(); //when searching on variant IDs, retrieving all temporary collection
                     } else {
-                        Collection<BasicDBList> variantQueryDBListCol = buildVariantDataQuery(gsvr, getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), info[0]), true);
+                        Collection<BasicDBList> variantQueryDBListCol = buildVariantDataQuery(gsvr, getSequenceIDsBeingFilteredOn(gsvr.getRequest().getSession(), info[0]), true, VariantData.class);
                         //in this case, there is only one variantQueryDBList (no filtering on variant ids)
                         BasicDBList variantQueryDBList = !variantQueryDBListCol.isEmpty() ? variantQueryDBListCol.iterator().next() : new BasicDBList();
 
