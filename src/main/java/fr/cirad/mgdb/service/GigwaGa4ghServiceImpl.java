@@ -688,7 +688,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                         };
 
-                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
+                        if (threadsToWaitFor.size() % nNConcurrentThreads == nNConcurrentThreads - 1) {
                             threadsToWaitFor.add(queryThread); // only needed to have an accurate count
                             queryThread.run();    // run synchronously
 
@@ -699,6 +699,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             else if (nRunningThreadCount < nNConcurrentThreads * .25)
                                 nNConcurrentThreads *= 1.5;
                             nNConcurrentThreads = Math.min(MAXIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS, Math.max(MINIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS, nNConcurrentThreads));
+//                            System.out.println(nRunningThreadCount + " / " + threadsToWaitFor.size() + " -> " + nNConcurrentThreads);
                         }
                         else {
                             threadsToWaitFor.add(queryThread);
@@ -1002,7 +1003,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            else if (nRunningThreadCount < nNConcurrentThreads * .25)
 	                                nNConcurrentThreads *= 1.5;
 	                            nNConcurrentThreads = Math.min(MAXIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS, Math.max(MINIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS, nNConcurrentThreads));
-	    //                        System.out.println(nRunningThreadCount + " / " + threadsToWaitFor.size() + " -> " + nNConcurrentThreads);
+//	                            System.out.println(nRunningThreadCount + " / " + threadsToWaitFor.size() + " -> " + nNConcurrentThreads);
 	                        }
 	                        else {
 	                            threadsToWaitFor.add(queryThread);
@@ -1055,8 +1056,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         if (partialCountArray == null)
             nTotalCount = countVariants(gsvr, true);
-        else
-            LOG.info("findVariants found " + nTotalCount + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
+
+        LOG.info("findVariants found " + nTotalCount + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
 
         if (progress.isAborted() || progress.getError() != null)
             return 0;
