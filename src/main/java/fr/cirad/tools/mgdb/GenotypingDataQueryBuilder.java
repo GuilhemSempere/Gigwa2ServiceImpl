@@ -183,15 +183,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     /** The Constant GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR. */
     static final public String GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR = "Some Homozygous Var";
 
-    /** The Constant GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS. */
-    static final public String ___GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS = "All Heterozygous";
-
-    /** The Constant GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS. */
-    static final public String ___GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS = "Some Heterozygous";
-
-    /** The Constant GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY. */
-    static final public String ___GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY = "Without abnormal heterozygosity";
-
     /** The Constant genotypePatternToDescriptionMap. */
     static final private HashMap<String, String> genotypePatternToDescriptionMap = new LinkedHashMap<String, String>();
 
