@@ -360,8 +360,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (m_fFilteringOnSequence)
             initialMatchList.addAll(variantQueryDBList);    // more efficient if added first in this case
 
-        if (Helper.estimDocCount(mongoTemplate,GenotypingProject.class) != 1)
-            initialMatchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, genotypingProject.getId()));
+//        if (Helper.estimDocCount(mongoTemplate, GenotypingProject.class) != 1)	// disable this as this is now being done beforehand (and passed on via variantQueryDBList)
+//            initialMatchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, genotypingProject.getId()));
         
         int currentInterval = intervalIndexList.get(0);
         intervalIndexList.remove(0);
