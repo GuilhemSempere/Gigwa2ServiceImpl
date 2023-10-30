@@ -460,7 +460,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 queries.add(variantFeatureFilterList);
             }
         }
-        System.out.println(queries);
         return queries;
     }
 
