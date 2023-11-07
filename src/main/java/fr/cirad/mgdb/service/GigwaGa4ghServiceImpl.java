@@ -107,6 +107,7 @@ import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.MongoCommandException;
+import com.mongodb.client.DistinctIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -3036,5 +3037,42 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return values;
     }
+    
+    public List<String> searchGeneNames(String module, int projectId, String lookupText) throws AvroRemoteException {
+
+        MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
+
+        List<String> values = new ArrayList<>();
+
+        MongoCollection<Document> collection = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class));
+
+        BasicDBObject regexQuery = new BasicDBObject();
+        regexQuery.put("ai.EFF_ge", Pattern.compile(".*" + lookupText + ".*", Pattern.CASE_INSENSITIVE));
+
+        int maxSize = 50;
+        try {
+            String variantIdLookupMaxSize = appConfig.get("variantIdLookupMaxSize");
+            maxSize = Integer.parseInt(variantIdLookupMaxSize);
+        } catch (Exception e) {
+            LOG.debug("Can't read variantIdLookupMaxSize in config, using maxSize=50");
+        }
+
+        DistinctIterable<String> distinctValues = collection.distinct("ai.EFF_ge", regexQuery, String.class);
+        
+        for (String value : distinctValues) {
+            values.add(value);
+            if (values.size() >= maxSize) {
+                break;
+            }
+        }
+
+        if (values.size() > maxSize) {
+            values.clear();
+            values.add("Too many results, please refine search!");
+        }
+
+        return values;
+    }
+
 
 }
