@@ -116,13 +116,13 @@ public class VisualizationService {
 		return true;
 	}
     
-    public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
+    public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr, String token) throws Exception {
         long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
-        ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "variant density on sequence " + gdr.getDisplayedSequence()});
+        ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "variant density on sequence " + gdr.getDisplayedSequence()});
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -237,13 +237,13 @@ public class VisualizationService {
 		}
     }
 
-    public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
+    public Map<Long, Double> selectionFst(GigwaDensityRequest gdr, String token) throws Exception {
     	long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
-		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Fst estimate on sequence " + gdr.getDisplayedSequence()});
+		ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Fst estimate on sequence " + gdr.getDisplayedSequence()});
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -438,13 +438,13 @@ public class VisualizationService {
 		return new TreeMap<Long, Double>(result);
     }
     
-    public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
+    public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr, String token) throws Exception {
 		long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
-		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Tajima's D on sequence " + gdr.getDisplayedSequence()});
+		ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Tajima's D on sequence " + gdr.getDisplayedSequence()});
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -967,14 +967,14 @@ public class VisualizationService {
     }
 
     
-    public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr) throws Exception {
+    public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr, String token) throws Exception {
         long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gvfpr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
-        ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gvfpr.getRequest()), new String[] {"Calculating plot data for " + gvfpr.getVcfField() +  " field regarding " + (gvfpr.getDisplayedVariantType() != null ? gvfpr.getDisplayedVariantType() + " " : "") + "variants on sequence " + gvfpr.getDisplayedSequence()});
+        ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating plot data for " + gvfpr.getVcfField() +  " field regarding " + (gvfpr.getDisplayedVariantType() != null ? gvfpr.getDisplayedVariantType() + " " : "") + "variants on sequence " + gvfpr.getDisplayedSequence()});
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
