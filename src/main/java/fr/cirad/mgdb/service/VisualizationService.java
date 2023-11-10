@@ -37,9 +37,9 @@ import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
-import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData.VariantRunDataId;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
+import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
 import fr.cirad.model.GigwaDensityRequest;
 import fr.cirad.model.GigwaVcfFieldPlotRequest;
@@ -126,7 +126,7 @@ public class VisualizationService {
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Collection<BasicDBList> variantQueryDBListColl = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
+        Collection<BasicDBList> variantQueryDBListColl = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true, VariantData.class);
         final BasicDBList variantQueryDBList = variantQueryDBListColl.size() == 1 ? variantQueryDBListColl.iterator().next() : new BasicDBList();
 
         MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
@@ -247,7 +247,7 @@ public class VisualizationService {
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        final BasicDBList variantQueryDBList = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true).iterator().next();   // there's only one in this case
+        final BasicDBList variantQueryDBList = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true, VariantData.class).iterator().next();   // there's only one in this case
 
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -448,7 +448,7 @@ public class VisualizationService {
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-		final BasicDBList variantQueryDBList = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true).iterator().next();   // there's only one in this case
+		final BasicDBList variantQueryDBList = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true, VariantData.class).iterator().next();   // there's only one in this case
 
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -978,7 +978,7 @@ public class VisualizationService {
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Collection<BasicDBList> variantQueryDBListColl = ga4ghService.buildVariantDataQuery(gvfpr, ga4ghService.getSequenceIDsBeingFilteredOn(gvfpr.getRequest().getSession(), sModule), true);
+        Collection<BasicDBList> variantQueryDBListColl = ga4ghService.buildVariantDataQuery(gvfpr, ga4ghService.getSequenceIDsBeingFilteredOn(gvfpr.getRequest().getSession(), sModule), true, VariantData.class);
         final BasicDBList variantQueryDBList = variantQueryDBListColl.size() == 1 ? variantQueryDBListColl.iterator().next() : new BasicDBList();
 
         MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gvfpr.getRequest()), false);

@@ -45,10 +45,10 @@ import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
-import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData.VariantRunDataId;
 import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
+import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
 import fr.cirad.model.GigwaSearchVariantsRequest;
 import fr.cirad.tools.Helper;
@@ -182,15 +182,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
     /** The Constant GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR. */
     static final public String GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR = "Some Homozygous Var";
-
-    /** The Constant GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS. */
-    static final public String ___GENOTYPE_CODE_LABEL_ALL_HETEROZYGOUS = "All Heterozygous";
-
-    /** The Constant GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS. */
-    static final public String ___GENOTYPE_CODE_LABEL_ATL_ONE_HETEROZYGOUS = "Some Heterozygous";
-
-    /** The Constant GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY. */
-    static final public String ___GENOTYPE_CODE_LABEL_WITHOUT_ABNORMAL_HETEROZYGOSITY = "Without abnormal heterozygosity";
 
     /** The Constant genotypePatternToDescriptionMap. */
     static final private HashMap<String, String> genotypePatternToDescriptionMap = new LinkedHashMap<String, String>();
@@ -369,8 +360,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (m_fFilteringOnSequence)
             initialMatchList.addAll(variantQueryDBList);    // more efficient if added first in this case
 
-        if (Helper.estimDocCount(mongoTemplate,GenotypingProject.class) != 1)
-            initialMatchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, genotypingProject.getId()));
+//        if (Helper.estimDocCount(mongoTemplate, GenotypingProject.class) != 1)	// disable this as this is now being done beforehand (and passed on via variantQueryDBList)
+//            initialMatchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, genotypingProject.getId()));
         
         int currentInterval = intervalIndexList.get(0);
         intervalIndexList.remove(0);
@@ -924,8 +915,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static public List<Integer> getGroupsForWhichToFilterOnGenotypingOrAnnotationData(GigwaSearchVariantsRequest gsvr, boolean fConsiderFielThresholds)
     {
         List<Integer> result = getGroupsForWhichToFilterOnGenotypingData(gsvr, fConsiderFielThresholds);
-        
-        if (result.size() == 0 && (Helper.estimDocCount(Helper.getInfoFromId(gsvr.getVariantSetId(), 2)[0], GenotypingProject.class) != 1 || gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
+ 
+        if (result.size() == 0 && (gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
             result.add(0);    // needed at least for filtering on annotation data or distinguish records according to project id
 
         /*FIXME: this should also force filtering on VRD in cases where only some runs of the selected project are involved*/
