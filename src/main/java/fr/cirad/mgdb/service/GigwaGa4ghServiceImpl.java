@@ -3050,16 +3050,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         return values;
     }
     
-    public List<String> searchGeneNames(String module, int projectId, String lookupText) throws AvroRemoteException {
-
+    public List<String> searchGenesLookup(String module, int projectId, String lookupText) throws AvroRemoteException {
+    	long before = System.currentTimeMillis();
+    	String fieldPath = VariantRunData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE;    	
+    	
         MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
-
         List<String> values = new ArrayList<>();
-
-        MongoCollection<Document> collection = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class));
-
-        BasicDBObject regexQuery = new BasicDBObject();
-        regexQuery.put("ai.EFF_ge", Pattern.compile(".*" + lookupText + ".*", Pattern.CASE_INSENSITIVE));
+        MongoCollection<Document> collection = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
+        
+        BasicDBObject whereQuery = new BasicDBObject();
+        whereQuery.put(fieldPath, Pattern.compile(".*" + lookupText + ".*", Pattern.CASE_INSENSITIVE));
 
         int maxSize = 50;
         try {
@@ -3068,23 +3068,49 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         } catch (Exception e) {
             LOG.debug("Can't read variantIdLookupMaxSize in config, using maxSize=50");
         }
-
-        DistinctIterable<String> distinctValues = collection.distinct("ai.EFF_ge", regexQuery, String.class);
         
-        for (String value : distinctValues) {
-            values.add(value);
-            if (values.size() >= maxSize) {
-                break;
+        
+
+        MongoCursor<Document> cursor = collection.aggregate(
+                Arrays.asList(
+                    Aggregates.match(whereQuery),
+                    Aggregates.unwind("$" + fieldPath),
+                    Aggregates.match(whereQuery),
+                    Aggregates.group("$" + fieldPath),
+                    Aggregates.limit(maxSize+1)
+                )
+            ).iterator();
+
+            try {
+                while (cursor.hasNext()) {
+                    values.add((String) cursor.next().get("_id"));
+                }
+            } finally {
+               cursor.close();
             }
-        }
 
-        if (values.size() > maxSize) {
-            values.clear();
-            values.add("Too many results, please refine search!");
-        }
+            if (values.size() > maxSize)
+                return Arrays.asList("Too many results, please refine search!");
 
+
+
+//        DistinctIterable<String> distinctValues = collection.distinct(fieldPath, whereQuery, String.class);
+//        
+//        for (String value : distinctValues) {
+//            values.add(value);
+//            if (values.size() >= maxSize) {
+//                break;
+//            }
+//        }
+//
+//        if (values.size() > maxSize) {
+//            values.clear();
+//            values.add("Too many results, please refine search!");
+//        }
+
+            
+            
+        LOG.info("searchGenesLookup found " + values.size() + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
         return values;
     }
-
-
 }
