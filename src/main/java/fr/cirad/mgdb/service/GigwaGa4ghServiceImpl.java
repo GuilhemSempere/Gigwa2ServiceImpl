@@ -986,7 +986,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gsver, getSequenceIDsBeingFilteredOn(gsver.getRequest().getSession(), sModule), true);
         Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
         final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
-
+        Collection<BasicDBList> variantRunDataQueries = varQueryWrapper.getVariantRunDataQueries();
+        
         Document variantQuery = nTempVarCount == 0 && !variantDataQueries.isEmpty() ? new Document("$and", variantQueryDBList) : new Document();
         String usedVarCollName = nTempVarCount == 0 ? mongoTemplate.getCollectionName(VariantData.class) : tmpVarColl.getNamespace().getCollectionName();
 
@@ -1076,7 +1077,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             try {
                                 progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
                                 progress.moveToNextStep();    // done with identifying variants
-                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
+                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList(), count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
