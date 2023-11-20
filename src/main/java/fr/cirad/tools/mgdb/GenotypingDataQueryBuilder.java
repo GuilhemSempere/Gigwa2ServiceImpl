@@ -80,10 +80,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     private String variantEffects;
     
     /** The selected individuals. */
-    private List<Collection<String>> selectedIndividuals;
+    private List<Collection<String>> selectedIndividuals = new ArrayList<>();
     
     /** The operator. */
-    private List<String> operator;
+    private List<String> operator = new ArrayList<>();
     
     /** The percentage of individuals for the "all same" filter. */
     private List<Integer> mostSameRatio;
@@ -112,7 +112,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     boolean fDiscriminate = false;
     
     /** The individual index to sample list map. */
-    private List<TreeMap<String /*individual*/, ArrayList<GenotypingSample>>> individualToSampleListMap;
+    private List<TreeMap<String /*individual*/, ArrayList<GenotypingSample>>> individualToSampleListMap = new ArrayList<>();
     
     /** The total chunk count. */
     private long nTotalChunkCount = 0;
