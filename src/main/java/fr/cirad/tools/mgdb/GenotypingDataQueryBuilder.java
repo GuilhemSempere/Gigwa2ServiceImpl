@@ -36,7 +36,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-//import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
@@ -78,12 +78,14 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     
     /** The variant effects. */
     private String variantEffects;
+
+    private Integer numberGroups = 2;
     
     /** The selected individuals. */
     private List<Collection<String>> selectedIndividuals = new ArrayList<>();
     
     /** The operator. */
-    private List<String> operator = new ArrayList<>();
+    private List<String> operator;
     
     /** The percentage of individuals for the "all same" filter. */
     private List<Integer> mostSameRatio;
@@ -247,16 +249,20 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         this.maxHeZ = gsvr.getMaxHeZ();
         this.minmaf = gsvr.getMinMaf();
         this.maxmaf = gsvr.getMaxMaf();
-        
+        this.numberGroups = gsvr.getNumberGroups();
+        this.operator = new ArrayList<>(Collections.nCopies(numberGroups, null));
+        this.selectedIndividuals = new ArrayList<>(Collections.nCopies(numberGroups, null));
+        this.individualToSampleListMap = new ArrayList<>(Collections.nCopies(numberGroups, null));
+
         filteredGroups = getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsvr, false);
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
         List<List<String>> callsetids = new ArrayList<>();
         callsetids.add(gsvr.getCallSetIds());
         callsetids.addAll(gsvr.getAdditionalCallSetIds());
         for (int i = 0; i < filteredGroups.size(); i++){
-            this.selectedIndividuals.add(callsetids.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetids.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-            this.operator.add(genotypePatternToQueryMap.get(gsvr.getGtPattern().get(i)));
-            this.individualToSampleListMap.add(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals.get(i)));
+            this.selectedIndividuals.set(filteredGroups.get(i), callsetids.get(filteredGroups.get(i)).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetids.get(filteredGroups.get(i)).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+            this.operator.set(filteredGroups.get(i), genotypePatternToQueryMap.get(gsvr.getGtPattern().get(filteredGroups.get(i))));
+            this.individualToSampleListMap.set(filteredGroups.get(i), MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals.get(i)));
         }
         if (filteredGroups.size() > 1) {
             fDiscriminate = gsvr.isDiscriminate();
@@ -283,7 +289,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (!fForCounting || fIsMultiRunProject) {
             List<GenotypingSample> involvedSamples = new ArrayList<>();
             for (int i = 0; i < filteredGroups.size(); i++) {
-                involvedSamples.addAll(individualToSampleListMap.get(i).values().stream().flatMap(List::stream).collect(Collectors.toList()));
+                involvedSamples.addAll(individualToSampleListMap.get(filteredGroups.get(i)).values().stream().flatMap(List::stream).collect(Collectors.toList()));
             }
             HashMap<Integer, List<String>> involvedRunsByProject = Helper.getRunsByProjectInSampleCollection(involvedSamples);
             List<String> involvedProjectRuns = involvedRunsByProject.get(genotypingProject.getId());
@@ -402,15 +408,15 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         }
         pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", initialMatchList)));
 
-          
-        boolean[] fZygosityRegex = new boolean[filteredGroups.size()];
-        boolean[] fNegateMatch = new boolean[filteredGroups.size()];
-        boolean[] fOr = new boolean[filteredGroups.size()];
-        boolean[] fMafApplied = new boolean[filteredGroups.size()];
-        boolean[] fMissingDataApplied = new boolean[filteredGroups.size()];
-        boolean[] fHezRatioApplied = new boolean[filteredGroups.size()];
-        boolean[] fCompareBetweenGenotypes = new boolean[filteredGroups.size()];
-        String[] cleanOperator = new String[filteredGroups.size()];
+        int maxi = filteredGroups.stream().max(Integer::compare).get() + 1;
+        boolean[] fZygosityRegex = new boolean[maxi];
+        boolean[] fNegateMatch = new boolean[maxi];
+        boolean[] fOr = new boolean[maxi];
+        boolean[] fMafApplied = new boolean[maxi];
+        boolean[] fMissingDataApplied = new boolean[maxi];
+        boolean[] fHezRatioApplied = new boolean[maxi];
+        boolean[] fCompareBetweenGenotypes = new boolean[maxi];
+        String[] cleanOperator = new String[maxi];
 
         for (int g : filteredGroups) {
             cleanOperator[g] = operator.get(g);
@@ -653,13 +659,13 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     BasicDBList andMafMatch = new BasicDBList();
                     if (minmaf.get(g) > 0)
                     	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", minmaf.get(g))));
-                    if (minmaf.get(g) < 50)
+                    if (maxmaf.get(g) < 50)
                     	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", maxmaf.get(g))));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
                     andMafMatch = new BasicDBList();
                     if (minmaf.get(g) > 0)
                     	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf.get(g).floatValue()))));
-                    if (minmaf.get(g) < 50)
+                    if (maxmaf.get(g) < 50)
                     	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf.get(g).floatValue()))));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
                     finalMatchList.add(new BasicDBObject("$or", orMafMatch));
@@ -776,10 +782,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         if (fExcludeVariantsWithOnlyMissingData) {  // not all runs are selected: some variants may have no data for the selected samples, we don't want to include them
             ArrayList<BasicDBObject> orList = new ArrayList<BasicDBObject>();
-            if (maxMissingData.get(0) == 100)
-                orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m0", new BasicDBObject("$lt", selectedIndividuals.get(0).size())));
-            if (filteredGroups.contains(1) && maxMissingData.get(1) == 100)
-                orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m1", new BasicDBObject("$lt", selectedIndividuals.get(1).size())));
+            for (int i = 0; i < filteredGroups.size(); i++) {
+                if (maxMissingData.get(filteredGroups.get(i)) == 100)
+                    orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m" + filteredGroups.get(i), new BasicDBObject("$lt", selectedIndividuals.get(filteredGroups.get(i)).size())));
+            }
             if (!orList.isEmpty())
                 finalMatchList.add(new BasicDBObject("$or", orList));
         }
@@ -787,10 +793,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-//        if (nNextCallCount == 1) {
-//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-//            catch (Exception ignored) {}
-//        }
+        if (nNextCallCount == 1) {
+            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+            catch (Exception ignored) {}
+        }
         return pipeline;
     }
 
