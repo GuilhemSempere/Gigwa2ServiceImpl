@@ -36,7 +36,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
@@ -662,12 +662,14 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     if (maxmaf.get(g) < 50)
                     	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", maxmaf.get(g))));
                     orMafMatch.add(new BasicDBObject("$and", andMafMatch));
-                    andMafMatch = new BasicDBList();
-                    if (minmaf.get(g) > 0)
-                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf.get(g).floatValue()))));
-                    if (maxmaf.get(g) < 50)
-                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf.get(g).floatValue()))));
-                    orMafMatch.add(new BasicDBObject("$and", andMafMatch));
+                    if (minmaf.get(g) < 50) {	// if we're looking for exactly 50% we don't want to account for the case where the targeted allele is actual the major (otherwise it would be the same as aaplying no MAF filter)
+	                    andMafMatch = new BasicDBList();
+	                    if (minmaf.get(g) > 0)
+	                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf.get(g).floatValue()))));
+	                    if (maxmaf.get(g) < 50)
+	                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf.get(g).floatValue()))));
+	                    orMafMatch.add(new BasicDBObject("$and", andMafMatch));
+                    }
                     finalMatchList.add(new BasicDBObject("$or", orMafMatch));
                 }
             }
@@ -793,10 +795,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-        if (nNextCallCount == 1) {
-            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-            catch (Exception ignored) {}
-        }
+//        if (nNextCallCount == 1) {
+//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+//            catch (Exception ignored) {}
+//        }
         return pipeline;
     }
 
