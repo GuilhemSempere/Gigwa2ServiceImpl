@@ -57,7 +57,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.persistence.criteria.CriteriaBuilder;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
@@ -470,20 +469,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
-        int nProjectIndCount = MgdbDao.getProjectIndividuals(sModule, projId).size();
-        List<Integer> nGroupsIndCount = new ArrayList<>();
-        List<List<String>> callsetids = new ArrayList<>();
-        callsetids.add(gsvr.getCallSetIds());
-        callsetids.addAll(gsvr.getAdditionalCallSetIds());
-        for (int i = 0; i < gsvr.getNumberGroups(); i++) {
-            nGroupsIndCount.add(callsetids.get(i) != null && !callsetids.get(i).isEmpty() ? callsetids.get(i).size() : nProjectIndCount);
-        }
+        List<List<String>> callsetIds = gsvr.getAllCallSetIds();
 
         List<Integer> groupsForWhichToFilterOnGenotypingData = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
         int nIndCount = 0;
-        for (int i = 0; i < groupsForWhichToFilterOnGenotypingData.size(); i++) {
-            nIndCount += groupsForWhichToFilterOnGenotypingData.contains(i) ? nGroupsIndCount.get(i) : 0;
-        }
+        for (int i = 0; i < callsetIds.size(); i++)
+        	if (groupsForWhichToFilterOnGenotypingData.contains(i))
+        		nIndCount += callsetIds.get(i).size();
         if (nIndCount == 0)
             return null;    // no genotyping data filtering involved
 
@@ -1097,15 +1089,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         int nGroupsToFilterGenotypingDataOn = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsver, true).size();
 
         Collection<Collection<String>> selectedIndividualLists = new ArrayList<>();
-        List<List<String>> callsetids = new ArrayList<>();
-        callsetids.add(gsver.getCallSetIds());
-        callsetids.addAll(gsver.getAdditionalCallSetIds());
-        for (int i = 0; i < nGroupsToFilterGenotypingDataOn; i++) {
-            selectedIndividualLists.add(callsetids.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : callsetids.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-        }
+        List<List<String>> callsetIds = gsver.getAllCallSetIds();
+        for (int i = 0; i < callsetIds.size(); i++)
+            selectedIndividualLists.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
-//        Set<String> selectedIndividualList1 = gsver.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-//        Set<String> selectedIndividualList2 = gsver.getCallSetIds2().size() == 0 && nGroupsToFilterGenotypingDataOn > 1 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
         Collection<String> individualsToExport = gsver.getExportedIndividuals().size() > 0 ? gsver.getExportedIndividuals() : MgdbDao.getProjectIndividuals(sModule, projId);
 
         long count = countVariants(gsver, true);
@@ -1411,11 +1398,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getAlleleCount() + ":"
                         + gsvr.getGeneName() + ":"
                         + gsvr.getSelectedVariantIds() + ":";
-        List<List<String>> callsetids = new ArrayList<>();
-        callsetids.add(gsvr.getCallSetIds());
-        callsetids.addAll(gsvr.getAdditionalCallSetIds());
-        for (int i = 0; i < gsvr.getNumberGroups(); i++) {
-            queryKey += callsetids.get(i) + ":"
+        
+        List<List<String>> callsetIds = gsvr.getAllCallSetIds();
+        for (int i = 0; i < callsetIds.size(); i++) {
+            queryKey += callsetIds.get(i) + ":"
                         + gsvr.getAnnotationFieldThresholds().get(i) + ":"
                         + gsvr.getGtPattern().get(i) + ":"
                         + gsvr.getMostSameRatio().get(i) + ":"
@@ -1426,32 +1412,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getMinMaf().get(i) + ":"
                         + gsvr.getMaxMaf().get(i) + ":";
         }
-
-//                        + gsvr.getCallSetIds() + ":"
-//                        + gsvr.getAnnotationFieldThresholds() + ":"
-//                        + gsvr.getGtPattern() + ":"
-//                        + gsvr.getMostSameRatio() + ":"
-//                        + gsvr.getMinMissingData() + ":"
-//                        + gsvr.getMaxMissingData() + ":"
-//                        + gsvr.getMinHeZ() + ":"
-//                        + gsvr.getMaxHeZ() + ":"
-//                        + gsvr.getMinMaf() + ":"
-//                        + gsvr.getMaxMaf() + ":"
-//
-//                        + gsvr.getCallSetIds2() + ":"
-////                        + gsvr.getAnnotationFieldThresholds2() + ":"
-////                        + gsvr.getGtPattern2() + ":"
-////                        + gsvr.getMostSameRatio2() + ":"
-////                        + gsvr.getMinMissingData2() + ":"
-////                        + gsvr.getMaxMissingData2() + ":"
-////                        + gsvr.getMinHeZ2() + ":"
-////                        + gsvr.getMaxHeZ2() + ":"
-////                        + gsvr.getMinMaf2() + ":"
-////                        + gsvr.getMaxMaf2() + ":"
         queryKey += gsvr.isDiscriminate() + ":"
                   + gsvr.getVariantEffect();
 //        System.out.println(queryKey);
-            return Helper.convertToMD5(queryKey);
+        return Helper.convertToMD5(queryKey);
     }
 
 

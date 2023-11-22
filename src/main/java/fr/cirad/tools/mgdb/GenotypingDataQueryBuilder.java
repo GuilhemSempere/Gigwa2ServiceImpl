@@ -256,11 +256,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         filteredGroups = getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsvr, false);
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
-        List<List<String>> callsetids = new ArrayList<>();
-        callsetids.add(gsvr.getCallSetIds());
-        callsetids.addAll(gsvr.getAdditionalCallSetIds());
-        for (int i = 0; i < filteredGroups.size(); i++){
-            this.selectedIndividuals.set(filteredGroups.get(i), callsetids.get(filteredGroups.get(i)).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetids.get(filteredGroups.get(i)).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+        List<List<String>> callsetIds = gsvr.getAllCallSetIds();
+        for (int i = 0; i < filteredGroups.size(); i++) {
+            this.selectedIndividuals.set(filteredGroups.get(i), callsetIds.get(filteredGroups.get(i)).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(filteredGroups.get(i)).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
             this.operator.set(filteredGroups.get(i), genotypePatternToQueryMap.get(gsvr.getGtPattern().get(filteredGroups.get(i))));
             this.individualToSampleListMap.set(filteredGroups.get(i), MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals.get(i)));
         }
@@ -910,11 +908,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             if (gsvr.isDiscriminate() || !gsvr.getGtPattern().get(i).equals(GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) */|| gsvr.getMinHeZ().get(i) > 0 || gsvr.getMaxHeZ().get(i) < 100 || gsvr.getMinMissingData().get(i) > 0 || gsvr.getMaxMissingData().get(i) < 100 || gsvr.getMinMaf().get(i) > 0 || gsvr.getMaxMaf().get(i) < 50)
                 result.add(i);
         }
-//        if (gsvr.isDiscriminate() || !gsvr.getGtPattern().equals(GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) */|| gsvr.getMinHeZ() > 0 || gsvr.getMaxHeZ() < 100 || gsvr.getMinMissingData() > 0 || gsvr.getMaxMissingData() < 100 || gsvr.getMinMaf() > 0 || gsvr.getMaxMaf() < 50)
-//            result.add(0);
-//        if (gsvr.isDiscriminate() || !gsvr.getGtPattern2().equals(GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds2().size() >= 1) */|| gsvr.getMinHeZ2() > 0 || gsvr.getMaxHeZ2() < 100 || gsvr.getMinMissingData2() > 0 || gsvr.getMaxMissingData2() < 100 || gsvr.getMinMaf2() > 0 || gsvr.getMaxMaf2() < 50)
-//            result.add(1);
-
         return result;
     }
     
