@@ -37,16 +37,18 @@ import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
-import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData.VariantRunDataId;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
+import fr.cirad.mgdb.model.mongo.subtypes.Run;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
+import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
 import fr.cirad.model.GigwaDensityRequest;
-import fr.cirad.model.GigwaSearchVariantsRequest;
 import fr.cirad.model.GigwaVcfFieldPlotRequest;
 import fr.cirad.tools.Helper;
 import fr.cirad.tools.ProgressIndicator;
 import fr.cirad.tools.mgdb.GenotypingDataQueryBuilder;
+import fr.cirad.tools.mgdb.VariantQueryBuilder;
+import fr.cirad.tools.mgdb.VariantQueryWrapper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
@@ -65,7 +67,7 @@ public class VisualizationService {
     
 	@Autowired private GigwaGa4ghServiceImpl ga4ghService;
 	
-    private boolean findDefaultRangeMinMax(GigwaDensityRequest gsvdr, String collectionName)
+    private boolean findDefaultRangeMinMax(GigwaDensityRequest gsvdr, String tmpCollName /* if null, main variant coll is used*/)
     {
     	if (gsvdr.getDisplayedRangeMin() != null && gsvdr.getDisplayedRangeMax() != null) {
     		LOG.info("findDefaultRangeMinMax skipped because min-max values already set");
@@ -79,6 +81,8 @@ public class VisualizationService {
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 		
 		BasicDBList matchAndList = new BasicDBList();
+		if (tmpCollName == null)
+			matchAndList.add(new BasicDBObject(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_PROJECT_ID, Integer.parseInt(info[1])));	
 		matchAndList.add(new BasicDBObject(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE, gsvdr.getDisplayedSequence()));
         if ((gsvdr.getStart() != null && gsvdr.getStart() != -1) || (gsvdr.getEnd() != null && gsvdr.getEnd() != -1)) {
             BasicDBObject posCrit = new BasicDBObject();
@@ -95,9 +99,10 @@ public class VisualizationService {
 		BasicDBObject limit = new BasicDBObject("$limit", 1);
 		String startFieldPath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
 
+		MongoCollection<Document> usedVarColl = mongoTemplate.getCollection(tmpCollName == null ? mongoTemplate.getCollectionName(VariantData.class) : tmpCollName); 
 		if (gsvdr.getDisplayedRangeMin() == null) {
 			BasicDBObject sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, 1));
-			MongoCursor<Document> cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).iterator();
+			MongoCursor<Document> cursor = usedVarColl.aggregate(Arrays.asList(match, sort, limit)).iterator();
 			if (!cursor.hasNext())
 				return false;	// no variant found matching filter
 
@@ -107,7 +112,7 @@ public class VisualizationService {
 
 		if (gsvdr.getDisplayedRangeMax() == null) {
 			BasicDBObject sort = new BasicDBObject("$sort", new BasicDBObject(startFieldPath, -1));
-			MongoCursor<Document> cursor = mongoTemplate.getCollection(collectionName).aggregate(Arrays.asList(match, sort, limit)).collation(IExportHandler.collationObj).iterator();
+			MongoCursor<Document> cursor = usedVarColl.aggregate(Arrays.asList(match, sort, limit)).collation(IExportHandler.collationObj).iterator();
 			if (!cursor.hasNext())
 				return false;	// no variant found matching filter
 
@@ -127,8 +132,9 @@ public class VisualizationService {
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Collection<BasicDBList> variantQueryDBListColl = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
-        final BasicDBList variantQueryDBList = variantQueryDBListColl.size() == 1 ? variantQueryDBListColl.iterator().next() : new BasicDBList();
+        VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
+        Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
+        final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
 
         MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
         long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -248,7 +254,9 @@ public class VisualizationService {
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        final BasicDBList variantQueryDBList = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true).iterator().next();   // there's only one in this case
+        VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
+        Collection<BasicDBList> variantRunDataQueries = varQueryWrapper.getVariantRunDataQueries();
+        final BasicDBList variantQueryDBList = variantRunDataQueries.size() == 1 ? variantRunDataQueries.iterator().next() : new BasicDBList();
 
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -258,13 +266,12 @@ public class VisualizationService {
 			return null;
 		}
 
-		final String vrdCollName = mongoTemplate.getCollectionName(VariantRunData.class);
 		final boolean useTempColl = (nTempVarCount != 0);
-		final String usedVarCollName = useTempColl ? tmpVarColl.getNamespace().getCollectionName() : vrdCollName;
+		final String usedVarCollName = useTempColl ? tmpVarColl.getNamespace().getCollectionName() : mongoTemplate.getCollectionName(VariantRunData.class);
 		final ConcurrentHashMap<Long, Double> result = new ConcurrentHashMap<Long, Double>();
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
-			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
+			if (!findDefaultRangeMinMax(gdr, useTempColl ? usedVarCollName : null)) {
 				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
 				return result;
 			}
@@ -449,8 +456,10 @@ public class VisualizationService {
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-		final BasicDBList variantQueryDBList = ga4ghService.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true).iterator().next();   // there's only one in this case
-
+	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
+	    Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
+	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
+      
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
 		if (GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gdr, false).size() > 0 && nTempVarCount == 0) {
@@ -557,15 +566,7 @@ public class VisualizationService {
         GenotypingProject genotypingProject = mongoTemplate.findById(Integer.valueOf(projId), GenotypingProject.class);
 
         boolean fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
-        boolean fGotMultiSampleIndividuals = false;
-
-
-        for (List<GenotypingSample> samplesForAGivenIndividual : individualToSampleListMap.values()) {
-            if (samplesForAGivenIndividual.size() > 1) {
-                fGotMultiSampleIndividuals = true;
-                break;
-            }
-        }
+        boolean fGotMultiSampleIndividuals = (individualToSampleListMap.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent());
 
     	List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
 
@@ -586,9 +587,6 @@ public class VisualizationService {
 
 	    	// Stage 4 : Keep only the right project
 	    	pipeline.add(new BasicDBObject("$match", new BasicDBObject(GENOTYPE_DATA_S2_DATA + "._id.pi", projId)));
-    	} else {
-    		// Stage 4 : Keep only the right project
-    		pipeline.add(new BasicDBObject("$match", new BasicDBObject("_id.pi", projId)));
     	}
 
     	if (fGotMultiSampleIndividuals) {
@@ -699,13 +697,14 @@ public class VisualizationService {
 
     	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
         if (gdr.getDisplayedAdditionalGroups() == null) {
-        	selectedIndividuals.add(gdr.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-        	selectedIndividuals.add(gdr.getCallSetIds2().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-        } else {
-        	for (Collection<String> group : gdr.getDisplayedAdditionalGroups()) {
-        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-        	}
+        	List<List<String>> callsetIds = gdr.getAllCallSetIds();
+			for (int i = 0; i < gdr.getNumberGroups(); i++)
+				selectedIndividuals.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
         }
+        else
+        	for (Collection<String> group : gdr.getDisplayedAdditionalGroups())
+        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         for (Collection<String> group : selectedIndividuals) {
         	individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, group));
@@ -987,8 +986,9 @@ public class VisualizationService {
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Collection<BasicDBList> variantQueryDBListColl = ga4ghService.buildVariantDataQuery(gvfpr, ga4ghService.getSequenceIDsBeingFilteredOn(gvfpr.getRequest().getSession(), sModule), true);
-        final BasicDBList variantQueryDBList = variantQueryDBListColl.size() == 1 ? variantQueryDBListColl.iterator().next() : new BasicDBList();
+	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gvfpr, ga4ghService.getSequenceIDsBeingFilteredOn(gvfpr.getRequest().getSession(), sModule), true);
+	    Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
+	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
 
         MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gvfpr.getRequest()), false);
         long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
