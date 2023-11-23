@@ -347,12 +347,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
-        int nProjectIndCount = MgdbDao.getProjectIndividuals(sModule, projId).size();
-        int nGroup1IndCount = gsvr.getCallSetIds() != null && gsvr.getCallSetIds().size() != 0 ? gsvr.getCallSetIds().size() : nProjectIndCount;
-        int nGroup2IndCount = gsvr.getCallSetIds2() != null && gsvr.getCallSetIds2().size() != 0 ? gsvr.getCallSetIds().size() : nProjectIndCount;
+        List<List<String>> callsetIds = gsvr.getAllCallSetIds();
 
         List<Integer> groupsForWhichToFilterOnGenotypingData = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
-        int nIndCount = (groupsForWhichToFilterOnGenotypingData.contains(0) ? nGroup1IndCount : 0)  + (groupsForWhichToFilterOnGenotypingData.contains(1) ? nGroup2IndCount : 0);
+        int nIndCount = 0;
+        for (int i = 0; i < callsetIds.size(); i++)
+        	if (groupsForWhichToFilterOnGenotypingData.contains(i))
+        		nIndCount += callsetIds.get(i).size();
         if (nIndCount == 0)
             return null;    // no genotyping data filtering involved
 
@@ -420,7 +421,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (genotypingProject.getAlleleCounts().size() != 1 || genotypingProject.getAlleleCounts().iterator().next() != 2) {    // Project does not only have bi-allelic data: make sure we can apply MAF filter on selection
                 boolean fExactlyOneNumberOfAllelesSelected = alleleCountList != null && alleleCountList.size() == 1;
                 boolean fBiAllelicSelected = fExactlyOneNumberOfAllelesSelected && "2".equals(alleleCountList.get(0));
-                boolean fMafRequested = (gsvr.getMaxMaf() != null && gsvr.getMaxMaf() < 50) || (gsvr.getMinMaf() != null && gsvr.getMinMaf() > 0);
+                boolean fMafRequested = (gsvr.getMaxMaf() != null && gsvr.getMaxMaf().get(0) < 50) || (gsvr.getMinMaf() != null && gsvr.getMinMaf().get(0) > 0);
                 if (fMafRequested && !fBiAllelicSelected) {
                     progress.setError("MAF is only supported on biallelic data!");
                     return 0l;
@@ -970,8 +971,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         int nGroupsToFilterGenotypingDataOn = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsver, true).size();
 
-        Set<String> selectedIndividualList1 = gsver.getCallSetIds().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-        Set<String> selectedIndividualList2 = gsver.getCallSetIds2().size() == 0 && nGroupsToFilterGenotypingDataOn > 1 ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : gsver.getCallSetIds2().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
+        Collection<Collection<String>> selectedIndividualLists = new ArrayList<>();
+        List<List<String>> callsetIds = gsver.getAllCallSetIds();
+        for (int i = 0; i < callsetIds.size(); i++)
+            selectedIndividualLists.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+
         Collection<String> individualsToExport = gsver.getExportedIndividuals().size() > 0 ? gsver.getExportedIndividuals() : MgdbDao.getProjectIndividuals(sModule, projId);
 
         long count = countVariants(gsver, true);
@@ -1077,7 +1081,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             try {
                                 progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
                                 progress.moveToNextStep();    // done with identifying variants
-                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList(), count, selectedIndividualList1, selectedIndividualList2, processId, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, progress);
+                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList(), count, selectedIndividualLists, processId, gsver.getAnnotationFieldThresholds(), samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
@@ -1129,7 +1133,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     public void run() {
                     	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                         try {
-                            markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualList1, selectedIndividualList2, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, gsver.getAnnotationFieldThresholds(), gsver.getAnnotationFieldThresholds2(), samplesToExport, gsver.getMetadataFields(), null, readyToExportFiles);
+                            markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), selectedIndividualLists, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, gsver.getAnnotationFieldThresholds(), samplesToExport, gsver.getMetadataFields(), null, readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                 progress.markAsComplete();
@@ -1278,34 +1282,25 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + (gsvr.getEnd() == null ? "" : gsvr.getEnd()) + ":"
                         + gsvr.getAlleleCount() + ":"
                         + gsvr.getGeneName() + ":"
-                        + gsvr.getSelectedVariantIds() + ":"
-
-                        + gsvr.getCallSetIds() + ":"
-                        + gsvr.getAnnotationFieldThresholds() + ":"
-                        + gsvr.getGtPattern() + ":"
-                        + gsvr.getMostSameRatio() + ":"
-                        + gsvr.getMinMissingData() + ":"
-                        + gsvr.getMaxMissingData() + ":"
-                        + gsvr.getMinHeZ() + ":"
-                        + gsvr.getMaxHeZ() + ":"
-                        + gsvr.getMinMaf() + ":"
-                        + gsvr.getMaxMaf() + ":"
-
-                        + gsvr.getCallSetIds2() + ":"
-                        + gsvr.getAnnotationFieldThresholds2() + ":"
-                        + gsvr.getGtPattern2() + ":"
-                        + gsvr.getMostSameRatio2() + ":"
-                        + gsvr.getMinMissingData2() + ":"
-                        + gsvr.getMaxMissingData2() + ":"
-                        + gsvr.getMinHeZ2() + ":"
-                        + gsvr.getMaxHeZ2() + ":"
-                        + gsvr.getMinMaf2() + ":"
-                        + gsvr.getMaxMaf2() + ":"
-
-                        + gsvr.isDiscriminate() + ":"
-                        + gsvr.getVariantEffect();
+                        + gsvr.getSelectedVariantIds() + ":";
+        
+        List<List<String>> callsetIds = gsvr.getAllCallSetIds();
+        for (int i = 0; i < gsvr.getNumberGroups(); i++) {
+            queryKey += callsetIds.get(i) + ":"
+                        + gsvr.getAnnotationFieldThresholds().get(i) + ":"
+                        + gsvr.getGtPattern().get(i) + ":"
+                        + gsvr.getMostSameRatio().get(i) + ":"
+                        + gsvr.getMinMissingData().get(i) + ":"
+                        + gsvr.getMaxMissingData().get(i) + ":"
+                        + gsvr.getMinHeZ().get(i) + ":"
+                        + gsvr.getMaxHeZ().get(i) + ":"
+                        + gsvr.getMinMaf().get(i) + ":"
+                        + gsvr.getMaxMaf().get(i) + ":";
+        }
+        queryKey += gsvr.isDiscriminate() + ":"
+                  + gsvr.getVariantEffect();
 //        System.out.println(queryKey);
-            return Helper.convertToMD5(queryKey);
+        return Helper.convertToMD5(queryKey);
     }
 
     /**
@@ -1397,7 +1392,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      *
      * @param module
      * @param projId
-     * @param cursors
+     * @param cursor
      * @param samples
      * @return List<Variant>
      * @throws AvroRemoteException
@@ -1663,7 +1658,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * get the metadata for a Project/VariantSet
      *
      * @param module
-     * @param listProj
+     * @param proj
      * @return List<List<VariantSetMetadata>>
      */
     private List<VariantSetMetadata> getMetadataList(String module, String proj) {
@@ -2791,60 +2786,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
         return variantAnnotationBuilder.build();
     }
-
-//    @Override
-//    public String getReferenceBases(String seqName, int start, int end, String module) throws ObjectNotFoundException {
-//
-//        String sequenceBase = "";
-//        int spaceCode = (int) '\n';
-//        int chevCode = (int) '>';
-//
-//        if (end > start) {
-//            Sequence seq = MongoTemplateManager.get(module).findById(seqName, Sequence.class);
-//            BufferedReader br = null;
-//            StringBuilder builder;
-//            if ((seq != null)) {
-//                try {
-//                    br = new BufferedReader(new InputStreamReader(new FileInputStream(seq.getFilePath())));
-//                    builder = new StringBuilder();
-//                    String line;
-//                    int c;
-//                    int pos = 0;
-//                    // skip line to reach sequence
-//                    while ((line = br.readLine()) != null && !line.startsWith(">" + seqName)) {
-//
-//                    }
-//                    // skip char to reach start pos
-//                    while ((c = br.read()) != -1 && pos < start) {
-//                        pos++;
-//                    }
-//                    builder.append((char) c);
-//
-//                    while ((c = br.read()) != -1 && pos < end && c != chevCode) {
-//                        if (c != spaceCode) {
-//                            builder.append((char) c);
-//                            pos++;
-//                        }
-//                    }
-//                    sequenceBase = builder.toString();
-//
-//                } catch (IOException ex) {
-//                    LOG.warn("could not open file : " + ex);
-//                } finally {
-//                    try {
-//                        if (br != null) {
-//                            br.close();
-//                        }
-//                    } catch (IOException ex) {
-//                        LOG.warn("could not close writer : " + ex);
-//                    }
-//                }
-//            }
-//            else
-//                throw new ObjectNotFoundException("No fasta for sequence " + seqName);
-//        }
-//        return sequenceBase;
-//    }
 
     @Override
     public Map<String, String> getAnnotationHeaders(String module, int projId) {
