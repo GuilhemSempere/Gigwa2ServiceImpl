@@ -1285,7 +1285,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getSelectedVariantIds() + ":";
         
         List<List<String>> callsetIds = gsvr.getAllCallSetIds();
-        for (int i = 0; i < callsetIds.size(); i++) {
+        for (int i = 0; i < gsvr.getNumberGroups(); i++) {
             queryKey += callsetIds.get(i) + ":"
                         + gsvr.getAnnotationFieldThresholds().get(i) + ":"
                         + gsvr.getGtPattern().get(i) + ":"
