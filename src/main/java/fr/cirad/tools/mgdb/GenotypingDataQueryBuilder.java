@@ -461,7 +461,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 }
             }
             
-            fMafApplied[g] = maxmaf.get(g) != null && maxmaf.get(g).floatValue() < 50F || minmaf.get(g) != null && minmaf.get(g).floatValue() > 0.0F;
+            fMafApplied[g] = maxmaf.get(g) != null && maxmaf.get(g) < 50F || minmaf.get(g) != null && minmaf.get(g) > 0.0F;
             fMissingDataApplied[g] = (minMissingData.get(g) != null && minMissingData.get(g) > 0) || (maxMissingData.get(g) != null && maxMissingData.get(g) < 100);
             fHezRatioApplied[g] = (minHeZ.get(g) != null && minHeZ.get(g) > 0) || (maxHeZ.get(g) != null && maxHeZ.get(g) < 100);
             
@@ -653,22 +653,21 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
                     subIn.put("f" + g, new BasicDBObject("$divide", divideList));
                     
+                    float minMaf = minmaf.get(g), maxMaf = maxmaf.get(g);
                     BasicDBList orMafMatch = new BasicDBList();
                     BasicDBList andMafMatch = new BasicDBList();
-                    if (minmaf.get(g) > 0)
-                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", minmaf.get(g))));
-                    if (maxmaf.get(g) < 50)
-                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", maxmaf.get(g))));
-                    orMafMatch.add(new BasicDBObject("$and", andMafMatch));
-                    if (minmaf.get(g) < 50) {	// if we're looking for exactly 50% we don't want to account for the case where the targeted allele is actual the major (otherwise it would be the same as aaplying no MAF filter)
-	                    andMafMatch = new BasicDBList();
-	                    if (minmaf.get(g) > 0)
-	                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", Float.valueOf(100F - minmaf.get(g).floatValue()))));
-	                    if (maxmaf.get(g) < 50)
-	                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", Float.valueOf(100F - maxmaf.get(g).floatValue()))));
-	                    orMafMatch.add(new BasicDBObject("$and", andMafMatch));
+                    if (minMaf > 0 && minMaf != maxMaf)
+                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$gte", minMaf)));
+                   	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject(minMaf == maxMaf ? "$eq" :"$lte", maxMaf != 50 ? maxMaf : (100F - minMaf))));
+                    orMafMatch.add(andMafMatch.size() == 1 ? andMafMatch.iterator().next() : new BasicDBObject("$and", andMafMatch));
+                    if (maxMaf != 50) {
+                    	andMafMatch = new BasicDBList();
+	                    if (minMaf > 0 && minMaf != maxMaf)
+	                    	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject("$lte", (100F - minMaf))));
+	                   	andMafMatch.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".f" + g, new BasicDBObject(minMaf == maxMaf ? "$eq" :"$gte", (100F - maxMaf))));
+	                    orMafMatch.add(andMafMatch.size() == 1 ? andMafMatch.iterator().next() : new BasicDBObject("$and", andMafMatch));
                     }
-                    finalMatchList.add(new BasicDBObject("$or", orMafMatch));
+	                finalMatchList.add(new BasicDBObject("$or", orMafMatch));
                 }
             }
 
