@@ -323,7 +323,7 @@ import java.util.concurrent.locks.*;
  * @since 1.5
  * @author Doug Lea
  */
-public class GroupedExecutor {
+public class GroupedExecutor extends java.util.concurrent.AbstractExecutorService {
     /**
      * The main pool control state, ctl, is an atomic integer packing
      * two conceptual fields
@@ -1111,6 +1111,7 @@ public class GroupedExecutor {
      * @param w the worker
      */
     final void runWorker(Worker w) {
+    	long before = System.currentTimeMillis();
         Thread wt = Thread.currentThread();
         Runnable task = w.firstTask;
         w.firstTask = null;
@@ -1118,6 +1119,7 @@ public class GroupedExecutor {
         boolean completedAbruptly = true;
         try {
             while (task != null || (task = getTask()) != null) {
+//            	System.out.println(w);
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
                 // if not, ensure thread is not interrupted.  This
@@ -1128,9 +1130,12 @@ public class GroupedExecutor {
                       runStateAtLeast(ctl.get(), STOP))) &&
                     !wt.isInterrupted())
                     wt.interrupt();
+
+                long afterLock = System.currentTimeMillis();
                 try {
                     beforeExecute(wt, task);
                     try {
+                    	System.err.println(w + " -> " + (System.currentTimeMillis() - before) + " / " + (System.currentTimeMillis() - afterLock));
                         task.run();
                         afterExecute(task, null);
                     } catch (Throwable ex) {
@@ -1142,6 +1147,7 @@ public class GroupedExecutor {
                     w.completedTasks++;
                     w.unlock();
                 }
+//                System.err.println(w.completedTasks);
             }
             completedAbruptly = false;
         } finally {
@@ -2076,16 +2082,21 @@ public class GroupedExecutor {
      * @throws RejectedExecutionException {@inheritDoc}
      * @throws NullPointerException       {@inheritDoc}
      */
-    public Future<Void> submit(Runnable task) {
+    private Future<Void> internalSubmit(Runnable task) {
         if (task == null) throw new NullPointerException();
         RunnableFuture<Void> ftask = newTaskFor(task, null);
         execute(ftask);
         return ftask;
     }
     
+    public Future<Void> submit(Runnable task) {
+        return submit("", task);
+    }
+    
     public Future<Void> submit(String group, Runnable task) {
+//    	System.err.println(this);
         TaskWrapper taskWrapper = new TaskWrapper(group, task);
-        return submit(taskWrapper);
+        return internalSubmit(taskWrapper);
     }
 
     static class TaskWrapper implements Runnable {

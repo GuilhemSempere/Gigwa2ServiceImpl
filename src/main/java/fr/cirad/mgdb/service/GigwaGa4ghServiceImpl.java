@@ -49,11 +49,13 @@ import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.Callable;
+import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
@@ -225,7 +227,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      */
     static protected NumberFormat nf = NumberFormat.getInstance();
     
-    static protected GroupedExecutor executor;
+    static protected AbstractExecutorService executor;
     
     static {
         nf.setMaximumFractionDigits(4);
@@ -235,12 +237,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         annotationField.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + 1, "$" + VariantRunData.SECTION_ADDITIONAL_INFO);
     }
 
-	private GroupedExecutor getExecutor() {
+	private AbstractExecutorService getExecutor() {
 		if (executor == null) {
 			int n = getMaxQueryThreads();
 			LOG.info("maxQueryThreads: " + n);
-//			executor = Executors.newFixedThreadPool(n);
-			executor = new GroupedExecutor(5, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());
+			executor = new GroupedExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());	//marche pas
+//			executor 	= new ThreadPoolExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());	//marche
+//			executor = new ThreadPoolExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());	//marche pas
+//			executor = new GroupedExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());		//marche
 		}
 		return executor;
 	}
@@ -444,8 +448,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         String queryKey = getQueryKey(gsvr);
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         
-//        MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
-//        cachedCountCollection.drop();
+        MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
+        cachedCountCollection.drop();
         
         Long count = CachedCount.getCachedCount(mongoTemplate, queryKey, null);
         LOG.debug((count == null ? "new" : "existing") + " queryKey hash: " + queryKey);
@@ -517,7 +521,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
 
-                    int i = -1, nNConcurrentThreads = INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS;
+                    int i = -1/*, nNConcurrentThreads = INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS*/;
                     while (genotypingDataQueryBuilder.hasNext()) {
                         final List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
 
@@ -614,7 +618,15 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                         };
 
-                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(progress.getProcessId(), queryThread));
+//                        try {
+                        	threadsToWaitFor.add((Future<Void>) getExecutor().submit(/*token, */queryThread));                        
+//                        	System.err.println(((ThreadPoolExecutor) getExecutor()).getPoolSize());
+//                        }
+//                        catch (Throwable t) {
+//                        	t.printStackTrace();
+//                        }
+                        
+                        
 //                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
 //                            threadsToWaitFor.add(queryThread); // only needed to have an accurate count
 //                            queryThread.run();    // run synchronously
@@ -936,7 +948,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            }
 	                        };
 	
-	                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(progress.getProcessId(), queryThread));
+	                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(/*token, */queryThread));
 	
 	//	                        executor.execute(queryThread);
 	//	                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
@@ -978,7 +990,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                            partialCountArrayToFill[j] = tmpVarColl.countDocuments(new BasicDBObject("$and", rangesToCount.get(j)));
 	                                        }
 	                                    };
-	                                    threadsToWaitFor.add((Future<Void>) getExecutor().submit(progress.getProcessId(), countThread));
+	                                    threadsToWaitFor.add((Future<Void>) getExecutor().submit(/*token, */countThread));
 	
 	//	                                    if (j % nNConcurrentThreads*2 == 0 || j == rangesToCount.size() - 1) {
 	//	                                        for (Thread t : threadsToWaitFor)

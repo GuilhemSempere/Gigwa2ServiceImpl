@@ -112,6 +112,7 @@ public class GroupedBlockingQueue<E> implements BlockingQueue<E> {
     
     @Override
     public E take() throws InterruptedException {
+//    	long before = System.currentTimeMillis();
         synchronized (this) {
 	        List<String> groupKeys = new ArrayList<>(taskGroups.keySet());
 	        int groupCount = groupKeys.size();
@@ -131,7 +132,7 @@ public class GroupedBlockingQueue<E> implements BlockingQueue<E> {
 		                E element = groupQueue.poll();
 		                if (element != null) {
 		                    previousGroupIndex = currentIndex; // Update the previousGroupIndex variable
-		                	System.out.println("launching " + group);
+//		                	System.out.println("launching " + group);
 		                    return element;
 		                }
 		                else
@@ -296,15 +297,6 @@ public class GroupedBlockingQueue<E> implements BlockingQueue<E> {
     }
 
     @Override
-    public boolean removeIf(Predicate<? super E> filter) {
-        boolean removed = false;
-        for (Queue<E> groupQueue : taskGroups.values()) {
-            removed |= groupQueue.removeIf(filter);
-        }
-        return removed;
-    }
-
-    @Override
     public Spliterator<E> spliterator() {
         List<E> elements = new ArrayList<>();
         for (Queue<E> groupQueue : taskGroups.values()) {
@@ -313,7 +305,16 @@ public class GroupedBlockingQueue<E> implements BlockingQueue<E> {
         return elements.spliterator();
     }
 
-    public E poll() {
+    @Override
+	public boolean removeIf(Predicate<? super E> filter) {
+	    boolean removed = false;
+	    for (Queue<E> groupQueue : taskGroups.values()) {
+	        removed |= groupQueue.removeIf(filter);
+	    }
+	    return removed;
+	}
+
+	public E poll() {
         for (Queue<E> groupQueue : taskGroups.values()) {
             E element = groupQueue.poll();
             if (element != null) {
