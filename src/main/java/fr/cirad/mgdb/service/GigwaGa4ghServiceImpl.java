@@ -464,10 +464,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (genotypingProject.getAlleleCounts().size() != 1 || genotypingProject.getAlleleCounts().iterator().next() != 2) {    // Project does not only have bi-allelic data: make sure we can apply MAF filter on selection
                 boolean fExactlyOneNumberOfAllelesSelected = alleleCountList != null && alleleCountList.size() == 1;
                 boolean fBiAllelicSelected = fExactlyOneNumberOfAllelesSelected && "2".equals(alleleCountList.get(0));
-                boolean fMafRequested = (gsvr.getMaxMaf() != null && gsvr.getMaxMaf().get(0) < 50) || (gsvr.getMinMaf() != null && gsvr.getMinMaf().get(0) > 0);
-                if (fMafRequested && !fBiAllelicSelected) {
-                    progress.setError("MAF is only supported on biallelic data!");
-                    return 0l;
+                for (int i = 0; i < gsvr.getNumberGroups(); i++) 
+	                if (!fBiAllelicSelected && (gsvr.getMaxMaf(i) < 50 || gsvr.getMinMaf(i) > 0)) {
+	                    progress.setError("MAF is only supported on biallelic data!");
+	                    return 0l;
                 }
             }
 
@@ -1057,7 +1057,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         int nGroupsToFilterGenotypingDataOn = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsver, true).size();
 
-        Collection<Collection<String>> selectedIndividualLists = new ArrayList<>();
+        List<Collection<String>> selectedIndividualLists = new ArrayList<>();
         List<List<String>> callsetIds = gsver.getAllCallSetIds();
         for (int i = 0; i < callsetIds.size(); i++)
             selectedIndividualLists.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
@@ -1371,17 +1371,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getSelectedVariantIds() + ":";
         
         List<List<String>> callsetIds = gsvr.getAllCallSetIds();
-        for (int i = 0; i < gsvr.getNumberGroups(); i++) {
+        for (int i = 0; i < callsetIds.size(); i++) {
             queryKey += callsetIds.get(i) + ":"
-                        + gsvr.getAnnotationFieldThresholds().get(i) + ":"
-                        + gsvr.getGtPattern().get(i) + ":"
-                        + gsvr.getMostSameRatio().get(i) + ":"
-                        + gsvr.getMinMissingData().get(i) + ":"
-                        + gsvr.getMaxMissingData().get(i) + ":"
-                        + gsvr.getMinHeZ().get(i) + ":"
-                        + gsvr.getMaxHeZ().get(i) + ":"
-                        + gsvr.getMinMaf().get(i) + ":"
-                        + gsvr.getMaxMaf().get(i) + ":";
+                        + gsvr.getAnnotationFieldThresholds(i) + ":"
+                        + gsvr.getGtPattern(i) + ":"
+                        + gsvr.getMostSameRatio(i) + ":"
+                        + gsvr.getMinMissingData(i) + ":"
+                        + gsvr.getMaxMissingData(i) + ":"
+                        + gsvr.getMinHeZ(i) + ":"
+                        + gsvr.getMaxHeZ(i) + ":"
+                        + gsvr.getMinMaf(i) + ":"
+                        + gsvr.getMaxMaf(i) + ":";
         }
         queryKey += gsvr.isDiscriminate() + ":"
                   + gsvr.getVariantEffect();
