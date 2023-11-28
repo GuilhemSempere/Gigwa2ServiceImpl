@@ -698,7 +698,7 @@ public class VisualizationService {
     	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
         if (gdr.getDisplayedAdditionalGroups() == null) {
         	List<List<String>> callsetIds = gdr.getAllCallSetIds();
-			for (int i = 0; i < gdr.getNumberGroups(); i++)
+			for (int i = 0; i < callsetIds.size(); i++)
 				selectedIndividuals.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
         }
         else
