@@ -227,7 +227,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      */
     static protected NumberFormat nf = NumberFormat.getInstance();
     
-    static protected AbstractExecutorService executor;
+    static protected ExecutorService executor;
     
     static {
         nf.setMaximumFractionDigits(4);
@@ -237,14 +237,15 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         annotationField.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + 1, "$" + VariantRunData.SECTION_ADDITIONAL_INFO);
     }
 
-	private AbstractExecutorService getExecutor() {
+	private ExecutorService getExecutor() {
 		if (executor == null) {
 			int n = getMaxQueryThreads();
 			LOG.info("maxQueryThreads: " + n);
-			executor = new GroupedExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());	//marche pas
-//			executor 	= new ThreadPoolExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());	//marche
-//			executor = new ThreadPoolExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());	//marche pas
-//			executor = new GroupedExecutor(20, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());		//marche
+			executor = new GroupedExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());		//marche pas
+//			executor = new ThreadPoolExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());	//marche
+//			executor = new ThreadPoolExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());	//marche pas
+//			executor = new GroupedExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());		//marche
+//			executor = Executors.newFixedThreadPool(n);
 		}
 		return executor;
 	}
