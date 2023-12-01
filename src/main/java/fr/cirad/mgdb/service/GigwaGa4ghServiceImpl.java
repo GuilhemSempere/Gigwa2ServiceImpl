@@ -51,6 +51,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -152,8 +153,8 @@ import fr.cirad.tools.mgdb.GenotypingDataQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryWrapper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
-import fr.cirad.tools.query.GroupedBlockingQueue;
 import fr.cirad.tools.query.GroupedExecutor;
+import fr.cirad.tools.query.GroupedExecutor.*;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
 import htsjdk.variant.variantcontext.GenotypeLikelihoods;
@@ -207,8 +208,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * number of simultaneous query threads
      */
     static final int INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS = 10;
-    static final private int DEFAULT_MINIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS = 5;
-    static final private int DEFAULT_MAXIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS = 50;
 
     static final protected HashMap<String, String> annotationField = new HashMap<>();
 
@@ -227,7 +226,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      */
     static protected NumberFormat nf = NumberFormat.getInstance();
     
-    static protected ExecutorService executor;
+//    static protected ExecutorService executor;
     
     static {
         nf.setMaximumFractionDigits(4);
@@ -237,37 +236,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         annotationField.put(VariantRunData.SECTION_ADDITIONAL_INFO + "." + 1, "$" + VariantRunData.SECTION_ADDITIONAL_INFO);
     }
 
-	private ExecutorService getExecutor() {
-		if (executor == null) {
-			int n = getMaxQueryThreads();
-			LOG.info("maxQueryThreads: " + n);
-			executor = new GroupedExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());		//marche pas
-//			executor = new ThreadPoolExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());	//marche
-//			executor = new ThreadPoolExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new GroupedBlockingQueue<>());	//marche pas
-//			executor = new GroupedExecutor(n, n, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());		//marche
-//			executor = Executors.newFixedThreadPool(n);
-		}
-		return executor;
-	}
-
-//    public int getMinQueryThreads() {
-//        try {
-//        	return Integer.parseInt(appConfig.get("minQueryThreads"));
-//        }
-//        catch (Exception e) {
-//        	return DEFAULT_MINIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS;
-//        }
-//    }
-//
-    public int getMaxQueryThreads() {
-        try {
-        	return Integer.parseInt(appConfig.get("maxQueryThreads"));
-        }
-        catch (Exception e) {
-        	return DEFAULT_MAXIMUM_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS;
-        }
-    }
-    
     public boolean isAggregationAllowedToUseDisk() {
         if (appConfig == null)
             return true; // We are probably running a unit test
@@ -450,7 +418,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         
         MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
-        cachedCountCollection.drop();
+//        cachedCountCollection.drop();
         
         Long count = CachedCount.getCachedCount(mongoTemplate, queryKey, null);
         LOG.debug((count == null ? "new" : "existing") + " queryKey hash: " + queryKey);
@@ -522,7 +490,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
 
-                    int i = -1/*, nNConcurrentThreads = INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS*/;
+                    int i = -1;
+                    ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
                     while (genotypingDataQueryBuilder.hasNext()) {
                         final List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
 
@@ -563,7 +532,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            {    // no variants match indexed part of the query: skip chunk
                                     partialCountArray[chunkIndex] = 0l;
                                     // do as if one more async thread was launched so we keep better track of the progress
-//                                    threadsToWaitFor.add(null);
                                     finishedThreadCount.incrementAndGet();
                                     continue;
 	                            }
@@ -580,7 +548,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 {    // no variants match indexed part of the query: skip chunk
                                     partialCountArray[chunkIndex] = 0l;
                                     // do as if one more async thread was launched so we keep better track of the progress
-//                                    threadsToWaitFor.add(null);
                                     finishedThreadCount.incrementAndGet();
                                     continue;
                                 }
@@ -592,7 +559,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                         if (progress.isAborted())
                             return 0l;
-
+                        
                         final ProgressIndicator finalProgress = progress;
                         Thread queryThread = new Thread() {
                             @Override
@@ -612,48 +579,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                	}
 	                                }
                             	else {
-                            		LOG.debug("Cancelling running query threads for process " + finalProgress.getProcessId());
                             		for (Future<Void> f : threadsToWaitFor)
                             			f.cancel(true);
+                            		LOG.debug("Cancelled query threads for process " + finalProgress.getProcessId());
                             	}
                             }
                         };
 
-//                        try {
-                        	threadsToWaitFor.add((Future<Void>) getExecutor().submit(/*token, */queryThread));                        
-//                        	System.err.println(((ThreadPoolExecutor) getExecutor()).getPoolSize());
-//                        }
-//                        catch (Throwable t) {
-//                        	t.printStackTrace();
-//                        }
-                        
-                        
-//                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
-//                            threadsToWaitFor.add(queryThread); // only needed to have an accurate count
-//                            queryThread.run();    // run synchronously
-//
-//                            // regulate number of concurrent threads
-//                            int nRunningThreadCount = threadsToWaitFor.size() - finishedThreadCount.get();
-//                            if (nRunningThreadCount > nNConcurrentThreads * .5)
-//                                nNConcurrentThreads = (int) (nNConcurrentThreads / 1.5);
-//                            else if (nRunningThreadCount < nNConcurrentThreads * .25)
-//                                nNConcurrentThreads *= 1.5;
-//                            nNConcurrentThreads = Math.min(getMaxQueryThreads(), Math.max(getMinQueryThreads(), nNConcurrentThreads));
-//                    	    System.out.println(nRunningThreadCount + " / " + threadsToWaitFor.size() + " -> " + nNConcurrentThreads);
-//                        }
-//                        else {
-//                            threadsToWaitFor.add(queryThread);
-//                            queryThread.start();    // run asynchronously for better speed
-//                        }
-
+                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, queryThread)));
                     }
 
                     for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-//                        if (t != null)
-                        	t.get();
-                    
-//                    getExecutor().invokeAll(threadsToWaitFor);
-
+                    	t.get();
                     
                     count = 0l;
                     if (progress.getError() == null && !progress.isAborted()) {
@@ -729,7 +666,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         String sMongoHost = MongoTemplateManager.getModuleHost(sModule);
 
         MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
-        //cachedCountCollection.drop();
+        cachedCountCollection.drop();
         MongoCursor<Document> countCursor = cachedCountCollection.find(new BasicDBObject("_id", queryKey)).iterator();
 
         final Object[] partialCountArray = !countCursor.hasNext() ? null : ((List<Object>) countCursor.next().get(MgdbDao.FIELD_NAME_CACHED_COUNT_VALUE)).toArray();
@@ -815,9 +752,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                if (nChunkCount > 1)
 		                    LOG.debug("Query split into " + nChunkCount);
 		
-		                int i = -1/*, nNConcurrentThreads = INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS*/;
+		                int i = -1;
 		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
 		                final HashMap<Integer, BasicDBList> rangesToCount = new HashMap<>();
+                        ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
 		                while (genotypingDataQueryBuilder.hasNext()) {
 		                    List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
 		                    if (progress.isAborted() || progress.getError() != null)
@@ -942,41 +880,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                     	progress.setCurrentStepProgress((short) (finishedThreadCount.incrementAndGet() * 100 / nChunkCount));
 	                            	}
 	                            	else {
-	                            		LOG.debug("Cancelling running query threads for process " + progress.getProcessId());
 	                            		for (Future<Void> f : threadsToWaitFor)
 	                            			f.cancel(true);
+	                            		LOG.debug("Cancelled query threads for process " + progress.getProcessId());
 	                            	}
 	                            }
 	                        };
-	
-	                        threadsToWaitFor.add((Future<Void>) getExecutor().submit(/*token, */queryThread));
-	
-	//	                        executor.execute(queryThread);
-	//	                        if (chunkIndex % nNConcurrentThreads == (nNConcurrentThreads - 1)) {
-	//	                            threadsToWaitFor.add(queryThread); // we only need to have an accurate count
-	//	                            queryThread.run();  // run synchronously
-	//	
-	//	                            // regulate number of concurrent threads
-	//	                            int nRunningThreadCount = threadsToWaitFor.size() - finishedThreadCount.get();
-	//	                            if (nRunningThreadCount > nNConcurrentThreads * .5)
-	//	                                nNConcurrentThreads = (int) (nNConcurrentThreads / 1.5);
-	//	                            else if (nRunningThreadCount < nNConcurrentThreads * .25)
-	//	                                nNConcurrentThreads *= 1.5;
-	//	                            nNConcurrentThreads = Math.min(getMaxQueryThreads(), Math.max(getMinQueryThreads(), nNConcurrentThreads));
-	//	    //                        System.out.println(nRunningThreadCount + " / " + threadsToWaitFor.size() + " -> " + nNConcurrentThreads);
-	//	                        }
-	//	                        else {
-	//	                            threadsToWaitFor.add(queryThread);
-	//	                            queryThread.start();    // run asynchronously for better speed
-	//	                        }
-	//	                        progress.setCurrentStepProgress((short) (i * 100 / nChunkCount));
+	                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, queryThread)));
 		                }
 		
-	//	                	getExecutor().invokeAll(threadsToWaitFor);
-	                    
 	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-	//	                        if (t != null)
-	                            t.get();
+                            t.get();
 	
 	                    if (progress.getError() == null && !progress.isAborted()) {
 	                        progress.setCurrentStepProgress(100);
@@ -991,24 +905,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                            partialCountArrayToFill[j] = tmpVarColl.countDocuments(new BasicDBObject("$and", rangesToCount.get(j)));
 	                                        }
 	                                    };
-	                                    threadsToWaitFor.add((Future<Void>) getExecutor().submit(/*token, */countThread));
-	
-	//	                                    if (j % nNConcurrentThreads*2 == 0 || j == rangesToCount.size() - 1) {
-	//	                                        for (Thread t : threadsToWaitFor)
-	//	                                            t.start();
-	//	
-	//	                                        for (Thread t : threadsToWaitFor) // wait for all threads before moving on
-	//	                                            t.join();
-	//	
-	//	                                        threadsToWaitFor.clear();
-	//	                                    }
+	                                    threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, countThread)));
 	                                }
 	                                
 	        	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-	//	        	                        if (t != null)
-	        	                            t.get();
-	//	                                executor.invokeAll(threadsToWaitFor);
-	//	                                threadsToWaitFor.clear();
+        	                            t.get();
 	                            }
 	                            mongoTemplate.save(new CachedCount(queryKey, Arrays.asList(partialCountArrayToFill)));
 	                        }
