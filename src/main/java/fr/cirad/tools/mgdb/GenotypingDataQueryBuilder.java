@@ -197,8 +197,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         if (!fForCounting || fIsMultiRunProject) {
             List<GenotypingSample> involvedSamples = new ArrayList<>();
-            for (int filteredGroup : filteredGroups) 
-                involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
+            if (!individualToSampleListMap.isEmpty())
+	            for (int filteredGroup : filteredGroups) 
+	                involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
 
             HashMap<Integer, List<String>> involvedRunsByProject = Helper.getRunsByProjectInSampleCollection(involvedSamples);
             List<String> involvedProjectRuns = involvedRunsByProject.get(genotypingProject.getId());
