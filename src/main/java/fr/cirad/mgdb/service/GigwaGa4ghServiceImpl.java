@@ -114,6 +114,7 @@ import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.Filters;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
@@ -2875,15 +2876,15 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     
     public List<String> searchGenesLookup(String module, int projectId, String lookupText) throws AvroRemoteException {
     	long before = System.currentTimeMillis();
-    	String fieldPath = VariantRunData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE;    	
-    	
+    	String fieldPath = "_id";
+
         MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
         List<String> values = new ArrayList<>();
-        MongoCollection<Document> collection = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
-        
+        MongoCollection<Document> collection = mongoTemplate.getCollection(MgdbDao.COLLECTION_NAME_GENE_CACHE);
+
         BasicDBObject whereQuery = new BasicDBObject();
         whereQuery.put(fieldPath, Pattern.compile(".*" + lookupText + ".*", Pattern.CASE_INSENSITIVE));
-
+        
         int maxSize = 50;
         try {
             String variantIdLookupMaxSize = appConfig.get("variantIdLookupMaxSize");
@@ -2892,17 +2893,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             LOG.debug("Can't read variantIdLookupMaxSize in config, using maxSize=50");
         }
         
-        
-
-        MongoCursor<Document> cursor = collection.aggregate(
-                Arrays.asList(
-                    Aggregates.match(whereQuery),
-                    Aggregates.unwind("$" + fieldPath),
-                    Aggregates.match(whereQuery),
-                    Aggregates.group("$" + fieldPath),
-                    Aggregates.limit(maxSize+1)
-                )
-            ).iterator();
+        MongoCursor<Document> cursor = collection.find(whereQuery).iterator();
 
             try {
                 while (cursor.hasNext()) {
@@ -2914,8 +2905,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             if (values.size() > maxSize)
                 return Arrays.asList("Too many results, please refine search!");
-
-
 
 //        DistinctIterable<String> distinctValues = collection.distinct(fieldPath, whereQuery, String.class);
 //        
@@ -2931,8 +2920,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //            values.add("Too many results, please refine search!");
 //        }
 
-            
-            
         LOG.info("searchGenesLookup found " + values.size() + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
         return values;
     }
