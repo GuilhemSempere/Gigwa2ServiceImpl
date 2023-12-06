@@ -102,6 +102,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
     private boolean fIsMultiRunProject = false;
     
+    private boolean fForCounting = false;
+    
     private boolean fGotMultiSampleIndividuals = false;
     
     private List<String> runsToRestrictQueryTo = null;
@@ -143,6 +145,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     public GenotypingDataQueryBuilder(GigwaSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
     {
         this.req = gsvr;
+        this.fForCounting = fForCounting;
         this.variantQueryDBList = variantQueryDBList;
         Helper.convertIdFiltersToRunFormat(Arrays.asList(this.variantQueryDBList));
         
@@ -196,16 +199,17 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 fGotMultiSampleIndividuals = true;
 
         if (!fForCounting || fIsMultiRunProject) {
-            List<GenotypingSample> involvedSamples = new ArrayList<>();
-            for (int filteredGroup : filteredGroups) 
-                involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
-
-            HashMap<Integer, List<String>> involvedRunsByProject = Helper.getRunsByProjectInSampleCollection(involvedSamples);
-            List<String> involvedProjectRuns = involvedRunsByProject.get(genotypingProject.getId());
-            if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
-                runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
-                fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
-            }
+        	if (!individualToSampleListMap.isEmpty()) {
+	            List<GenotypingSample> involvedSamples = new ArrayList<>();
+	            for (int filteredGroup : filteredGroups) 
+	                involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
+	
+	            List<String> involvedProjectRuns = Helper.getRunsByProjectInSampleCollection(involvedSamples).get(genotypingProject.getId());
+	            if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
+	                runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
+	                fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
+	            }
+        	}
             
             Integer nAssemblyId = Assembly.getThreadBoundAssembly();
             String refPosField = nAssemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
@@ -671,7 +675,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             
         if (fIsMultiRunProject)
             pipeline.add(new BasicDBObject("$group", groupFields));
-        else
+        else if (!fForCounting)
             projectionFields.put("_id", "$_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
         
         if (!annotationMatchList.isEmpty())
