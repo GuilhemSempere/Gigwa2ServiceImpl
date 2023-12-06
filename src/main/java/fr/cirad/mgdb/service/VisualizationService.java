@@ -154,7 +154,7 @@ public class VisualizationService {
 			}
 
         final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
-        final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
+        final double intervalSize = Math.ceil(Math.max(1, ((double) (gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (double) (gdr.getDisplayedRangeIntervalCount() - 1))));
         final ArrayList<Thread> threadsToWaitFor = new ArrayList<Thread>();
         final long rangeMin = gdr.getDisplayedRangeMin();
         final ProgressIndicator finalProgress = progress;
@@ -168,7 +168,7 @@ public class VisualizationService {
                 queryList.add(new BasicDBObject(VariantData.FIELDNAME_TYPE, gdr.getDisplayedVariantType()));
             String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
             queryList.add(new BasicDBObject(startSitePath, new BasicDBObject("$gte", gdr.getDisplayedRangeMin() + (i*intervalSize))));
-            queryList.add(new BasicDBObject(startSitePath, new BasicDBObject(i < gdr.getDisplayedRangeIntervalCount() - 1 ? "$lt" : "$lte", i < gdr.getDisplayedRangeIntervalCount() - 1 ? gdr.getDisplayedRangeMin() + ((i+1)*intervalSize) : gdr.getDisplayedRangeMax())));
+			queryList.add(new BasicDBObject(startSitePath, new BasicDBObject( "$lt", gdr.getDisplayedRangeMin() + ((i+1)*intervalSize))));
             if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
                 queryList.addAll(variantQueryDBList);
             final long chunkIndex = i;
@@ -179,7 +179,7 @@ public class VisualizationService {
                     {
                         long partialCount = mongoTemplate.getCollection(usedVarCollName).countDocuments(new BasicDBObject("$and", queryList));
                         nTotalTreatedVariantCount.addAndGet((int) partialCount);
-                        result.put(rangeMin + (chunkIndex*intervalSize), partialCount);
+                        result.put((long) (rangeMin + (chunkIndex*intervalSize)), partialCount);
                         finalProgress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
                     }
                 }
