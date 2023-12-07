@@ -667,6 +667,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
         cachedCountCollection.drop();
+
         MongoCursor<Document> countCursor = cachedCountCollection.find(new BasicDBObject("_id", queryKey)).iterator();
 
         final Object[] partialCountArray = !countCursor.hasNext() ? null : ((List<Object>) countCursor.next().get(MgdbDao.FIELD_NAME_CACHED_COUNT_VALUE)).toArray();
@@ -2336,6 +2337,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             MongoCursor<Document> cursor = null;
             try
             {
+                MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
+//                mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class)).drop();
+
                 if (doSearch) {
                     // create a temp collection to store the result of the request
                     count = findVariants(gsvr);
@@ -2349,8 +2353,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                     if (token == null)
                         return null;
-
-                    MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
 
                     MongoCollection<Document> tempVarColl = getTemporaryVariantCollection(info[0], token, false);
                     FindIterable<Document> iterable;
