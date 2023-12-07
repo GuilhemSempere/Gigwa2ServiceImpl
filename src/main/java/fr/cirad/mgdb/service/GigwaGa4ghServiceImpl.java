@@ -49,16 +49,11 @@ import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
@@ -155,7 +150,7 @@ import fr.cirad.tools.mgdb.VariantQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryWrapper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
 import fr.cirad.tools.query.GroupedExecutor;
-import fr.cirad.tools.query.GroupedExecutor.*;
+import fr.cirad.tools.query.GroupedExecutor.TaskWrapper;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
 import htsjdk.variant.variantcontext.GenotypeLikelihoods;
@@ -418,9 +413,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         String queryKey = getQueryKey(gsvr);
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         
-        MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
-//        cachedCountCollection.drop();
-        
         Long count = CachedCount.getCachedCount(mongoTemplate, queryKey, null);
         LOG.debug((count == null ? "new" : "existing") + " queryKey hash: " + queryKey);
         if (count == null)
@@ -491,12 +483,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
 
-                    
-	                HashMap<Integer, List<BasicDBObject>> debug = new HashMap<>();
-
-	                
                     int i = -1;
-                    ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+                    GroupedExecutor executor = MongoTemplateManager.getExecutor(sModule);
                     while (genotypingDataQueryBuilder.hasNext()) {
                         final List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
 
@@ -590,17 +578,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             	}
                             }
                         };
-
                         threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, queryThread)));
                     }
-
+                    
+                    executor.shutdown(token);	// important to be sure that all tasks in the group are executed before the queue purges it
                     for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-                    	try {
-                    		t.get(5, TimeUnit.SECONDS);
-                    	}
-                    catch (TimeoutException te) {
-                    	System.out.println(t.hashCode() + " -> " + debug.get(t.hashCode()));
-                    }
+                    	t.get();
                     
                     count = 0l;
                     if (progress.getError() == null && !progress.isAborted()) {
@@ -614,7 +597,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 }
                 catch (CancellationException ignored) {}
                 catch (Exception e) {
-                    LOG.debug("Error searching variants", e);
+                	if (progress.getError() == null && !progress.isAborted())
+                		progress.setError(e.getMessage());
+                    LOG.warn("Error searching variants", e);
                 }
             }
             LOG.info("countVariants found " + count + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
@@ -764,7 +749,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                int i = -1;
 		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
 		                final HashMap<Integer, BasicDBList> rangesToCount = new HashMap<>();
-                        ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+                        GroupedExecutor executor = MongoTemplateManager.getExecutor(sModule);
 		                while (genotypingDataQueryBuilder.hasNext()) {
 		                    List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
 		                    if (progress.isAborted() || progress.getError() != null)
@@ -898,6 +883,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, queryThread)));
 		                }
 		
+	                    executor.shutdown(token);	// important to be sure that all tasks in the group are executed before the queue purges it
 	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                    	t.get();
 	
@@ -917,8 +903,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                    threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, countThread)));
 	                                }
 	                                
-	        	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-        	                            t.get();
+	                                executor.shutdown(token);	// important to be sure that all tasks in the group are executed before the queue purges it
+	                                for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
+	                                	t.get();
 	                            }
 	                            mongoTemplate.save(new CachedCount(queryKey, Arrays.asList(partialCountArrayToFill)));
 	                        }
