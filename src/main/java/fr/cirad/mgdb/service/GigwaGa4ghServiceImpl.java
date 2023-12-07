@@ -58,6 +58,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
@@ -490,6 +491,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
 
+                    
+	                HashMap<Integer, List<BasicDBObject>> debug = new HashMap<>();
+
+	                
                     int i = -1;
                     ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
                     while (genotypingDataQueryBuilder.hasNext()) {
@@ -590,7 +595,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     }
 
                     for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-                    	t.get();
+                    	try {
+                    		t.get(5, TimeUnit.SECONDS);
+                    	}
+                    catch (TimeoutException te) {
+                    	System.out.println(t.hashCode() + " -> " + debug.get(t.hashCode()));
+                    }
                     
                     count = 0l;
                     if (progress.getError() == null && !progress.isAborted()) {
@@ -666,8 +676,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         String sMongoHost = MongoTemplateManager.getModuleHost(sModule);
 
         MongoCollection<Document> cachedCountCollection = mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class));
-        cachedCountCollection.drop();
-
         MongoCursor<Document> countCursor = cachedCountCollection.find(new BasicDBObject("_id", queryKey)).iterator();
 
         final Object[] partialCountArray = !countCursor.hasNext() ? null : ((List<Object>) countCursor.next().get(MgdbDao.FIELD_NAME_CACHED_COUNT_VALUE)).toArray();
@@ -752,7 +760,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		
 		                if (nChunkCount > 1)
 		                    LOG.debug("Query split into " + nChunkCount);
-		
+
 		                int i = -1;
 		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
 		                final HashMap<Integer, BasicDBList> rangesToCount = new HashMap<>();
@@ -891,7 +899,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                }
 		
 	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
-                            t.get();
+	                    	t.get();
 	
 	                    if (progress.getError() == null && !progress.isAborted()) {
 	                        progress.setCurrentStepProgress(100);
@@ -2338,7 +2346,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             try
             {
                 MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
-//                mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class)).drop();
+                mongoTemplate.getCollection(mongoTemplate.getCollectionName(CachedCount.class)).drop();
 
                 if (doSearch) {
                     // create a temp collection to store the result of the request
