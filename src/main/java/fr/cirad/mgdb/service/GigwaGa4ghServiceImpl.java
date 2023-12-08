@@ -54,6 +54,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
@@ -72,6 +73,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.log4j.Logger;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.ga4gh.methods.GAException;
 import org.ga4gh.methods.ListReferenceBasesRequest;
 import org.ga4gh.methods.ListReferenceBasesResponse;
@@ -111,10 +113,14 @@ import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.MongoCommandException;
+import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.model.Accumulators;
 import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.Facet;
+import com.mongodb.client.model.Filters;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
@@ -388,7 +394,110 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return "This is a big database. Given the number of selected individuals, you may only work on a maximum of " + nMaxSeqCount + " sequence(s) at a time.";
     }
-
+    
+//    private void doPrefiltering(Collection<List<BasicDBObject>> genotypingDataPipelines, MongoCollection<Document> varColl) {
+//    	
+//    	Long b4 = System.currentTimeMillis();
+//        boolean fMultiProjectDB = false;
+//
+//    	List<BasicDBObject> pipeline = new ArrayList<>();  	
+//	    BasicDBObject facetPipelines = new BasicDBObject();
+//	    
+//	    int nChunkIndex = 0;
+//	    for (List<BasicDBObject>genotypingDataPipeline : genotypingDataPipelines) {
+//	        BasicDBObject initialMatch = (BasicDBObject) genotypingDataPipeline.get(0).get("$match");
+//	        if (initialMatch != null) {    // initialMatchForVariantColl will be the one applied to variants collection when pre-filtering
+//	            BasicDBList initialMatchForVariantColl = (BasicDBList) ((BasicDBList) initialMatch.get("$and")).clone();
+//	            if (initialMatchForVariantColl != null) {
+//	                List<DBObject> toAdd = new ArrayList<>(), toRemove = new ArrayList<>();
+//	                for (Object filter : initialMatchForVariantColl) {
+//	                    Object variantIdFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
+//	                    if (variantIdFilter != null) {
+//	                        toAdd.add(new BasicDBObject("_id", variantIdFilter));
+//	                        toRemove.add((DBObject) filter);
+//	                    }
+//	                    else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID)) {
+//	                        toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
+//	                        fMultiProjectDB = true;
+//	                    }
+//	                }
+//	                initialMatchForVariantColl.addAll(toAdd);
+//	                initialMatchForVariantColl.removeAll(toRemove);
+//	            }
+////	            System.err.println(initialMatchForVariantColl);
+//	            
+//	            BasicDBObject matchStage = new BasicDBObject("$match", new BasicDBObject("$and", initialMatchForVariantColl));
+//
+//	            BasicDBObject groupStage = new BasicDBObject("$group",
+//	                    new BasicDBObject("_id", null)
+//	                            .append("count", new BasicDBObject("$sum", 1)));
+//
+//	            List<BasicDBObject> facet = Arrays.asList(matchStage, groupStage);
+//	            facetPipelines.append("chunk" + nChunkIndex++, facet);
+//	        }
+//
+//	    	
+//	        if (nChunkIndex == 25)
+//	        	break;
+//
+//	    }
+//	
+//	    pipeline.add(new BasicDBObject("$facet", facetPipelines));
+//	
+//	    // Execute the aggregation
+//	    AggregateIterable<Document> results = varColl.aggregate(pipeline);
+//	    
+//	
+//	    // Process the results as needed
+//	    int size = 0;
+//	    for (Document result : results) {
+////	        System.out.println(result.toJson());
+//	    	size++;
+//	    }
+//	    LOG.debug("doPrefiltering took " + (System.currentTimeMillis() - b4) + " (" + size + ")");
+//    }
+    
+    
+    private void applyPreFiltering(List<BasicDBObject> genotypingDataPipeline, boolean fMongoOnSameServer, MongoCollection<Document> varColl) {
+        BasicDBObject initialMatch = (BasicDBObject) genotypingDataPipeline.get(0).get("$match");
+        if (initialMatch != null) {    // initialMatchForVariantColl will be the one applied to variants collection when pre-filtering
+            BasicDBList initialMatchForVariantColl = (BasicDBList) ((BasicDBList) initialMatch.get("$and")).clone();
+            boolean fMultiProjectDB = false;
+            if (initialMatchForVariantColl != null) {
+                List<DBObject> toAdd = new ArrayList<>(), toRemove = new ArrayList<>();
+                for (Object filter : initialMatchForVariantColl) {
+                    Object variantIdFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
+                    if (variantIdFilter != null) {
+                        toAdd.add(new BasicDBObject("_id", variantIdFilter));
+                        toRemove.add((DBObject) filter);
+                    }
+                    else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID)) {
+                        toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
+                        fMultiProjectDB = true;
+                    }
+                }
+                initialMatchForVariantColl.addAll(toAdd);
+                initialMatchForVariantColl.removeAll(toRemove);
+            }
+            
+            if (fMongoOnSameServer) {    // always worth pre-filtering
+                MongoCursor<Document> variantCursor = varColl.find(new BasicDBObject("$and", initialMatchForVariantColl)).projection(new BasicDBObject("_id", 1)).iterator();
+                List<Comparable> chunkPreFilteredIDs = new ArrayList<>();
+                while (variantCursor.hasNext())
+                	chunkPreFilteredIDs.add((Comparable) variantCursor.next().get("_id"));
+                if (chunkPreFilteredIDs.size() == 0)
+                	genotypingDataPipeline.clear();    // no variants match indexed part of the query: skip chunk
+                else {    // DB server is the same machine as web server: $in operator will not be expensive
+                    if (!fMultiProjectDB)    // for single project dbs, $in is equivalent to original query, otherwise only a pre-filter
+                    	genotypingDataPipeline.remove(0);
+                    genotypingDataPipeline.add(0, new BasicDBObject("$match", new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", chunkPreFilteredIDs))));
+                }
+            }
+            else if (varColl.countDocuments(new BasicDBObject("$and", initialMatchForVariantColl)) == 0)    // only try and use pre-filtering to avoid executing genotyping data queries on irrelevant chunks
+               	genotypingDataPipeline.clear();    // no variants match indexed part of the query: skip chunk
+        }
+    }
+    
     @Override
     public long countVariants(GigwaSearchVariantsRequest gsvr, boolean fSelectionAlreadyExists) throws Exception {
         String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
@@ -472,7 +581,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                 GenotypingDataQueryBuilder genotypingDataQueryBuilder = new GenotypingDataQueryBuilder(gsvr, variantQueryDBList, true);
                 final int nChunkCount = genotypingDataQueryBuilder.getNumberOfQueries();
-                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.suffleChunkOrder();
+                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.shuffleChunkOrder();
 
                 try
                 {
@@ -482,76 +591,45 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final Long[] partialCountArray = new Long[nChunkCount];
                     final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
+                    final HashSet<Integer> skippedChunks = new HashSet<>();
 
                     int i = -1;
+                    final boolean finalPreFilterOnVarColl = fPreFilterOnVarColl;
+                    String taskGroup = "count_" + System.currentTimeMillis() + "_" + token;
                     GroupedExecutor executor = MongoTemplateManager.getExecutor(sModule);
+                    Long b4 = System.currentTimeMillis();
+                    
+//                    Collection<List<BasicDBObject>> genotypingDataPipelines = new ArrayList<>();
+//                    while (genotypingDataQueryBuilder.hasNext())
+//                    	genotypingDataPipelines.add(genotypingDataQueryBuilder.next());
+//                    
+////                    doPrefiltering(genotypingDataPipelines, varColl);
+//                    
+//                    for (List<BasicDBObject> genotypingDataPipeline : genotypingDataPipelines) {
+//                        
+                    
+                    
                     while (genotypingDataQueryBuilder.hasNext()) {
-                        final List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
-
+                    	List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
                         final int chunkIndex = shuffledChunkIndexes.get(++i);
-                        boolean fMultiProjectDB = false;
-
-                        BasicDBObject initialMatch = (BasicDBObject) genotypingDataPipeline.get(0).get("$match");
-                        if (initialMatch != null && fPreFilterOnVarColl)
-                        {    // initialMatchForVariantColl will be the one applied to variants collection when pre-filtering
-                            BasicDBList initialMatchForVariantColl = (BasicDBList) ((BasicDBList) initialMatch.get("$and")).clone();
-                            if (initialMatchForVariantColl != null)
-                            {
-                                List<DBObject> toAdd = new ArrayList<>(), toRemove = new ArrayList<>();
-                                for (Object filter : initialMatchForVariantColl)
-                                {
-                                        Object variantIdFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
-                                        if (variantIdFilter != null)
-                                        {
-                                                toAdd.add(new BasicDBObject("_id", variantIdFilter));
-                                                toRemove.add((DBObject) filter);
-                                        }
-                                        else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID)) {
-                                                toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
-                                                fMultiProjectDB = true;
-                                        }
-                                }
-                                initialMatchForVariantColl.addAll(toAdd);
-                                initialMatchForVariantColl.removeAll(toRemove);
-                            }
-
-                            if (fMongoOnSameServer)
-                            {    // always worth pre-filtering
-	                            MongoCursor<Document> variantCursor = varColl.find(new BasicDBObject("$and", initialMatchForVariantColl)).projection(new BasicDBObject("_id", 1)).iterator();
-	                            List<Comparable> chunkPreFilteredIDs = new ArrayList<>();
-	                            while (variantCursor.hasNext())
-	                            	chunkPreFilteredIDs.add((Comparable) variantCursor.next().get("_id"));
-	                            if (chunkPreFilteredIDs.size() == 0)
-	                            {    // no variants match indexed part of the query: skip chunk
-                                    partialCountArray[chunkIndex] = 0l;
-                                    // do as if one more async thread was launched so we keep better track of the progress
-                                    finishedThreadCount.incrementAndGet();
-                                    continue;
-	                            }
-	                            else
-	                            {    // DB server is the same machine as web server: $in operator will not be expensive
-                                    if (!fMultiProjectDB)    // for single project dbs, $in is equivalent to original query, otherwise only a pre-filter
-                                    	genotypingDataPipeline.remove(0);
-                                    genotypingDataPipeline.add(0, new BasicDBObject("$match", new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", chunkPreFilteredIDs))));
-	                            }
-                            }
-                            else
-                            {    // only try and use pre-filtering to avoid executing genotyping data queries on irrelevant chunks
-                                if (varColl.countDocuments(new BasicDBObject("$and", initialMatchForVariantColl)) == 0)
-                                {    // no variants match indexed part of the query: skip chunk
-                                    partialCountArray[chunkIndex] = 0l;
-                                    // do as if one more async thread was launched so we keep better track of the progress
-                                    finishedThreadCount.incrementAndGet();
-                                    continue;
-                                }
-                            }
-                        }
 
                         // Now the $group operation, used for counting
                         genotypingDataPipeline.add(new BasicDBObject("$count", "count"));
 
                         if (progress.isAborted())
                             return 0l;
+
+                        if (finalPreFilterOnVarColl && chunkIndex % 3 == 0) {
+//                    		System.out.println(chunkIndex);
+                        	applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
+                    		if (genotypingDataPipeline.isEmpty()) {
+                                partialCountArray[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
+                                skippedChunks.add(chunkIndex);
+                                finishedThreadCount.incrementAndGet();
+                                continue;
+                    		}
+                    	}
+
                         
                         final ProgressIndicator finalProgress = progress;
                         Thread queryThread = new Thread() {
@@ -559,10 +637,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             public void run() {
                             	if (finalProgress.getError() == null && !finalProgress.isAborted())
 	                                try {
+	                                	if (finalPreFilterOnVarColl && chunkIndex % 3 != 0) {
+	                                		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
+	                                		if (genotypingDataPipeline.isEmpty()) {
+	                                            partialCountArray[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
+	                                            skippedChunks.add(chunkIndex);
+	                                            finishedThreadCount.incrementAndGet();
+	                                            return;
+	                                		}
+	                                	}
 	                                    MongoCursor<Document> it = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(genotypingDataPipeline).allowDiskUse(isAggregationAllowedToUseDisk()).iterator();
 	                                    partialCountArray[chunkIndex] = it.hasNext() ? ((Number) it.next().get("count")).longValue() : 0;
 	                                    finalProgress.setCurrentStepProgress((short) (finishedThreadCount.incrementAndGet() * 100 / nChunkCount));
-	                                    genotypingDataPipeline.clear();    // release memory (VERY IMPORTANT)
 	                                    it.close();
 	                                }
 	                                catch (Throwable t) {
@@ -571,6 +657,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                                    finalProgress.setError(t.getMessage());
 	                                	}
 	                                }
+                            	finally {
+                                    genotypingDataPipeline.clear();    // release memory (VERY IMPORTANT)
+                            	}
                             	else {
                             		for (Future<Void> f : threadsToWaitFor)
                             			f.cancel(true);
@@ -578,10 +667,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             	}
                             }
                         };
-                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, queryThread)));
+                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(taskGroup, queryThread)));
                     }
                     
-                    executor.shutdown(token);	// important to be sure that all tasks in the group are executed before the queue purges it
+	                LOG.debug("submission took " + (System.currentTimeMillis() - b4));
+
+                    executor.shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
                     for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
                     	t.get();
                     
@@ -719,7 +810,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	
 	            try {
 		                final int nChunkCount = genotypingDataQueryBuilder.getNumberOfQueries();
-		                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.suffleChunkOrder();
+		                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.shuffleChunkOrder();
 		
 		                final Long[] partialCountArrayToFill = partialCountArray == null ? new Long[nChunkCount] : null;
 		                if (partialCountArrayToFill != null)
@@ -750,6 +841,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
 		                final HashMap<Integer, BasicDBList> rangesToCount = new HashMap<>();
                         GroupedExecutor executor = MongoTemplateManager.getExecutor(sModule);
+                        String taskGroup = "find_" + System.currentTimeMillis() + "_" + token;
 		                while (genotypingDataQueryBuilder.hasNext()) {
 		                    List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
 		                    if (progress.isAborted() || progress.getError() != null)
@@ -880,10 +972,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            	}
 	                            }
 	                        };
-	                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, queryThread)));
+	                        threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(taskGroup, queryThread)));
 		                }
 		
-	                    executor.shutdown(token);	// important to be sure that all tasks in the group are executed before the queue purges it
+	                    executor.shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
 	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                    	t.get();
 	
@@ -893,6 +985,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                        if (partialCountArrayToFill != null) {    // we don't have a count cache for this query: let's create it
 	                            if (!hostsNotSupportingMergeOperator.contains(sMongoHost)) {
 	                            	threadsToWaitFor.clear();
+	                                taskGroup = "find_count_" + System.currentTimeMillis() + "_" + token;
 	                                for (Integer j : rangesToCount.keySet()) {
 	        	                        Thread countThread = new Thread() {
 	        	                            @Override
@@ -900,10 +993,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                            partialCountArrayToFill[j] = tmpVarColl.countDocuments(new BasicDBObject("$and", rangesToCount.get(j)));
 	                                        }
 	                                    };
-	                                    threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(token, countThread)));
+	                                    threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(taskGroup, countThread)));
 	                                }
 	                                
-	                                executor.shutdown(token);	// important to be sure that all tasks in the group are executed before the queue purges it
+	                                executor.shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
 	                                for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                                	t.get();
 	                            }
