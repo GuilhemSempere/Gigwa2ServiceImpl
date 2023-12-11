@@ -254,7 +254,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         return taggedVariantList.size() > 0 && intervalIndexList.size() > 0;
     }
     
-    public List<Integer> suffleChunkOrder()
+    public List<Integer> shuffleChunkOrder()
     {
         Collections.shuffle(intervalIndexList);
         return new ArrayList<Integer> (intervalIndexList);
@@ -276,20 +276,13 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         int currentInterval = intervalIndexList.get(0);
         intervalIndexList.remove(0);
         
-        BasicDBList chunkMatchAndList = new BasicDBList();
-        String leftBound = null, rightBound = null;
-        if (currentInterval > 0) {
-            leftBound = (String) taggedVariantList.get(currentInterval - 1).get("_id");
-            chunkMatchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$gt", leftBound)));
-        }
-        
-        if (currentInterval < taggedVariantList.size()) {
-            rightBound = (String) taggedVariantList.get(currentInterval).get("_id");
-            chunkMatchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$lte", rightBound)));
-        }
-
-        for (Object chunkMatch : chunkMatchAndList)
-            initialMatchList.add((BasicDBObject) chunkMatch);
+        BasicDBObject idRangeFilter = new BasicDBObject();
+        if (currentInterval > 0)
+        	idRangeFilter.append("$gt", taggedVariantList.get(currentInterval - 1).get("_id"));
+        if (currentInterval < taggedVariantList.size())
+        	idRangeFilter.append("$lte", taggedVariantList.get(currentInterval).get("_id"));
+        if (!idRangeFilter.isEmpty())
+            initialMatchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, idRangeFilter));
 
         /* Step to match variants according to annotations */            
         if (projectHasEffectAnnotations && (req.getGeneName().length() > 0 || req.getVariantEffect().length() > 0)) {

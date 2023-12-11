@@ -467,7 +467,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                 GenotypingDataQueryBuilder genotypingDataQueryBuilder = new GenotypingDataQueryBuilder(gsvr, variantQueryDBList, true);
                 final int nChunkCount = genotypingDataQueryBuilder.getNumberOfQueries();
-                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.suffleChunkOrder();
+                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.shuffleChunkOrder();
 
                 try
                 {
@@ -722,7 +722,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	
 	            try {
 	                final int nChunkCount = genotypingDataQueryBuilder.getNumberOfQueries();
-	                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.suffleChunkOrder();
+	                final List<Integer> shuffledChunkIndexes = genotypingDataQueryBuilder.shuffleChunkOrder();
 	
 	                final Long[] partialCountArrayToFill = partialCountArray == null ? new Long[nChunkCount] : null;
 	                if (partialCountArrayToFill != null)
