@@ -54,7 +54,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
@@ -73,7 +72,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.log4j.Logger;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 import org.ga4gh.methods.GAException;
 import org.ga4gh.methods.ListReferenceBasesRequest;
 import org.ga4gh.methods.ListReferenceBasesResponse;
@@ -113,14 +111,10 @@ import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.MongoCommandException;
-import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
-import com.mongodb.client.model.Accumulators;
 import com.mongodb.client.model.Aggregates;
-import com.mongodb.client.model.Facet;
-import com.mongodb.client.model.Filters;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
@@ -914,7 +908,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                    if (partialCountArray != null)
 		                        genotypingDataPipeline.add(new BasicDBObject("$limit", partialCountArray[chunkIndex]));
 		                    genotypingDataPipeline.add(new BasicDBObject("$project", new BasicDBObject(VariantData.FIELDNAME_KNOWN_ALLELES, 1).append(Assembly.getThreadBoundVariantRefPosPath(), 1).append(VariantData.FIELDNAME_TYPE, 1)));
-		
+
 	                        Thread queryThread = new Thread() {
 	                            @Override
 	                            public void run() {
