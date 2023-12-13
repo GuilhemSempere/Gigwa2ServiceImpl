@@ -291,7 +291,7 @@ public class VisualizationService {
 
 		List<BasicDBObject> baseQuery = buildFstQuery(gdr, useTempColl);
 
-		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
+		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 
@@ -490,7 +490,7 @@ public class VisualizationService {
 
 		List<BasicDBObject> baseQuery = buildTajimaDQuery(gdr, useTempColl);
 
-		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
+		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
@@ -1095,7 +1095,7 @@ public class VisualizationService {
             	}
             };
 
-            if (chunkIndex%GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
+            if (chunkIndex%MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
                 t.run();    // run synchronously
             else
             {
