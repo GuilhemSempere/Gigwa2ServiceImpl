@@ -1108,4 +1108,20 @@ public class VisualizationService {
 
         return new TreeMap<Long, Integer>(result);
     }
+
+	public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
+		return selectionDensity(gdr, tokenManager.readToken(gdr.getRequest()));
+	}
+
+	public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
+		return selectionFst(gdr, tokenManager.readToken(gdr.getRequest()));
+	}
+
+	public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
+		return selectionTajimaD(gdr, tokenManager.readToken(gdr.getRequest()));
+	}
+
+	public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr) throws Exception {
+		return selectionVcfFieldPlotData(gvfpr, tokenManager.readToken(gvfpr.getRequest()));
+	}
 }
