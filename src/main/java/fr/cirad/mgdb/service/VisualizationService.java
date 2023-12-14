@@ -576,9 +576,9 @@ public class VisualizationService {
     	if (useTempColl) {
 	    	// Stage 2 : Lookup from temp collection to variantRunData
 	    	BasicDBObject lookup = new BasicDBObject();
-	    	lookup.put("from", "variantRunData");
+	    	lookup.put("from", mongoTemplate.getCollectionName(VariantRunData.class));
 	    	lookup.put("localField", "_id");
-	    	lookup.put("foreignField", "_id.vi");
+	    	lookup.put("foreignField", "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
 	    	lookup.put("as", GENOTYPE_DATA_S2_DATA);
 	    	pipeline.add(new BasicDBObject("$lookup", lookup));
 
@@ -586,7 +586,7 @@ public class VisualizationService {
 	    	pipeline.add(new BasicDBObject("$unwind", "$" + GENOTYPE_DATA_S2_DATA));
 
 	    	// Stage 4 : Keep only the right project
-	    	pipeline.add(new BasicDBObject("$match", new BasicDBObject(GENOTYPE_DATA_S2_DATA + "._id.pi", projId)));
+	    	pipeline.add(new BasicDBObject("$match", new BasicDBObject(GENOTYPE_DATA_S2_DATA + "._id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId)));
     	}
 
     	if (fGotMultiSampleIndividuals) {

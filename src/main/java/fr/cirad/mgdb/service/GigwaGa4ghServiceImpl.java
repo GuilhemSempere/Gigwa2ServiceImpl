@@ -109,10 +109,12 @@ import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.MongoCommandException;
+import com.mongodb.client.DistinctIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.Filters;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
@@ -2871,5 +2873,54 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return values;
     }
+    
+    public List<String> searchGenesLookup(String module, int projectId, String lookupText) throws AvroRemoteException {
+    	long before = System.currentTimeMillis();
+    	String fieldPath = "_id";
 
+        MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
+        List<String> values = new ArrayList<>();
+        MongoCollection<Document> collection = mongoTemplate.getCollection(MgdbDao.COLLECTION_NAME_GENE_CACHE);
+
+        BasicDBObject whereQuery = new BasicDBObject();
+        whereQuery.put(fieldPath, Pattern.compile(".*" + lookupText + ".*", Pattern.CASE_INSENSITIVE));
+        
+        int maxSize = 50;
+        try {
+            String variantIdLookupMaxSize = appConfig.get("variantIdLookupMaxSize");
+            maxSize = Integer.parseInt(variantIdLookupMaxSize);
+        } catch (Exception e) {
+            LOG.debug("Can't read variantIdLookupMaxSize in config, using maxSize=50");
+        }
+        
+        MongoCursor<Document> cursor = collection.find(whereQuery).iterator();
+
+            try {
+                while (cursor.hasNext()) {
+                    values.add((String) cursor.next().get("_id"));
+                }
+            } finally {
+               cursor.close();
+            }
+
+            if (values.size() > maxSize)
+                return Arrays.asList("Too many results, please refine search!");
+
+//        DistinctIterable<String> distinctValues = collection.distinct(fieldPath, whereQuery, String.class);
+//        
+//        for (String value : distinctValues) {
+//            values.add(value);
+//            if (values.size() >= maxSize) {
+//                break;
+//            }
+//        }
+//
+//        if (values.size() > maxSize) {
+//            values.clear();
+//            values.add("Too many results, please refine search!");
+//        }
+
+        LOG.info("searchGenesLookup found " + values.size() + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
+        return values;
+    }
 }
