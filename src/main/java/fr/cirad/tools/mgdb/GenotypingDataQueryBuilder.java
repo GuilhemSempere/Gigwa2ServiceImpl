@@ -812,7 +812,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     {
         List<Integer> result = new ArrayList<>();
         for (int i = 0; i < gsvr.getNumberGroups(); i++) {
-            if ((gsvr.isDiscriminate(g) && i <= 1 /* FIXME: adapt this when supporting discriminate on all groups */)|| !gsvr.getGtPattern(i).equals(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) */|| gsvr.getMinHeZ(i) > 0 || gsvr.getMaxHeZ(i) < 100 || gsvr.getMinMissingData(i) > 0 || gsvr.getMaxMissingData(i) < 100 || gsvr.getMinMaf(i) > 0 || gsvr.getMaxMaf(i) < 50)
+            if ((gsvr.isDiscriminate(i) && i <= 1 /* FIXME: adapt this when supporting discriminate on all groups */)|| !gsvr.getGtPattern(i).equals(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL) /*|| (fConsiderFieldThresholds && gsvr.getAnnotationFieldThresholds().size() >= 1) */|| gsvr.getMinHeZ(i) > 0 || gsvr.getMaxHeZ(i) < 100 || gsvr.getMinMissingData(i) > 0 || gsvr.getMaxMissingData(i) < 100 || gsvr.getMinMaf(i) > 0 || gsvr.getMaxMaf(i) < 50)
                 result.add(i);
         }
         return result;
