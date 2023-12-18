@@ -124,13 +124,13 @@ public class VisualizationService {
 		return true;
 	}
     
-    public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
+    public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr, String token) throws Exception {
         long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
-        ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "variant density on sequence " + gdr.getDisplayedSequence()});
+        ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "variant density on sequence " + gdr.getDisplayedSequence()});
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -156,8 +156,9 @@ public class VisualizationService {
 			}
 
         final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
-        final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
+        final double intervalSize = Math.ceil(Math.max(1, ((double) (gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (double) (gdr.getDisplayedRangeIntervalCount() - 1))));
         final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
+
         final long rangeMin = gdr.getDisplayedRangeMin();
         final ProgressIndicator finalProgress = progress;
         String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
@@ -171,7 +172,7 @@ public class VisualizationService {
                 queryList.add(new BasicDBObject(VariantData.FIELDNAME_TYPE, gdr.getDisplayedVariantType()));
             String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
             queryList.add(new BasicDBObject(startSitePath, new BasicDBObject("$gte", gdr.getDisplayedRangeMin() + (i*intervalSize))));
-            queryList.add(new BasicDBObject(startSitePath, new BasicDBObject(i < gdr.getDisplayedRangeIntervalCount() - 1 ? "$lt" : "$lte", i < gdr.getDisplayedRangeIntervalCount() - 1 ? gdr.getDisplayedRangeMin() + ((i+1)*intervalSize) : gdr.getDisplayedRangeMax())));
+			queryList.add(new BasicDBObject(startSitePath, new BasicDBObject( "$lt", gdr.getDisplayedRangeMin() + ((i+1)*intervalSize))));
             if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
                 queryList.addAll(variantQueryDBList);
             final long chunkIndex = i;
@@ -181,7 +182,7 @@ public class VisualizationService {
                     if (!finalProgress.isAborted()) {
                         long partialCount = mongoTemplate.getCollection(usedVarCollName).countDocuments(new BasicDBObject("$and", queryList));
                         nTotalTreatedVariantCount.addAndGet((int) partialCount);
-                        result.put(rangeMin + (chunkIndex*intervalSize), partialCount);
+                        result.put((long) (rangeMin + (chunkIndex*intervalSize)), partialCount);
                         finalProgress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
                     }
                 	else {
@@ -252,13 +253,13 @@ public class VisualizationService {
 		}
     }
 
-    public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
+    public Map<Long, Double> selectionFst(GigwaDensityRequest gdr, String token) throws Exception {
     	long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
-		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Fst estimate on sequence " + gdr.getDisplayedSequence()});
+		ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Fst estimate on sequence " + gdr.getDisplayedSequence()});
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -454,13 +455,13 @@ public class VisualizationService {
 		return new TreeMap<Long, Double>(result);
     }
     
-    public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
+    public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr, String token) throws Exception {
 		long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
 
-		ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gdr.getRequest()), new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Tajima's D on sequence " + gdr.getDisplayedSequence()});
+		ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "Tajima's D on sequence " + gdr.getDisplayedSequence()});
 		ProgressIndicator.registerProgressIndicator(progress);
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -584,9 +585,9 @@ public class VisualizationService {
     	if (useTempColl) {
 	    	// Stage 2 : Lookup from temp collection to variantRunData
 	    	BasicDBObject lookup = new BasicDBObject();
-	    	lookup.put("from", "variantRunData");
+	    	lookup.put("from", mongoTemplate.getCollectionName(VariantRunData.class));
 	    	lookup.put("localField", "_id");
-	    	lookup.put("foreignField", "_id.vi");
+	    	lookup.put("foreignField", "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
 	    	lookup.put("as", GENOTYPE_DATA_S2_DATA);
 	    	pipeline.add(new BasicDBObject("$lookup", lookup));
 
@@ -594,7 +595,7 @@ public class VisualizationService {
 	    	pipeline.add(new BasicDBObject("$unwind", "$" + GENOTYPE_DATA_S2_DATA));
 
 	    	// Stage 4 : Keep only the right project
-	    	pipeline.add(new BasicDBObject("$match", new BasicDBObject(GENOTYPE_DATA_S2_DATA + "._id.pi", projId)));
+	    	pipeline.add(new BasicDBObject("$match", new BasicDBObject(GENOTYPE_DATA_S2_DATA + "._id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId)));
     	}
 
     	if (fGotMultiSampleIndividuals) {
@@ -983,14 +984,14 @@ public class VisualizationService {
     }
 
     
-    public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr) throws Exception {
+    public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr, String token) throws Exception {
         long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gvfpr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
-        ProgressIndicator progress = new ProgressIndicator(tokenManager.readToken(gvfpr.getRequest()), new String[] {"Calculating plot data for " + gvfpr.getVcfField() +  " field regarding " + (gvfpr.getDisplayedVariantType() != null ? gvfpr.getDisplayedVariantType() + " " : "") + "variants on sequence " + gvfpr.getDisplayedSequence()});
+        ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating plot data for " + gvfpr.getVcfField() +  " field regarding " + (gvfpr.getDisplayedVariantType() != null ? gvfpr.getDisplayedVariantType() + " " : "") + "variants on sequence " + gvfpr.getDisplayedSequence()});
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -1116,4 +1117,20 @@ public class VisualizationService {
 
         return new TreeMap<Long, Integer>(result);
     }
+
+	public Map<Long, Long> selectionDensity(GigwaDensityRequest gdr) throws Exception {
+		return selectionDensity(gdr, tokenManager.readToken(gdr.getRequest()));
+	}
+
+	public Map<Long, Double> selectionFst(GigwaDensityRequest gdr) throws Exception {
+		return selectionFst(gdr, tokenManager.readToken(gdr.getRequest()));
+	}
+
+	public List<Map<Long, Double>> selectionTajimaD(GigwaDensityRequest gdr) throws Exception {
+		return selectionTajimaD(gdr, tokenManager.readToken(gdr.getRequest()));
+	}
+
+	public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr) throws Exception {
+		return selectionVcfFieldPlotData(gvfpr, tokenManager.readToken(gvfpr.getRequest()));
+	}
 }
