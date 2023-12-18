@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,7 +37,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
@@ -76,6 +77,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     private List<String> operator;
     
     private GigwaSearchVariantsRequest req;
+    
+    private HashSet<Integer> mutualDiscrim = new HashSet<>();;	// end of the query will be skipped for half of the groups mutually discriminating
     
     /** The individual index to sample list map. */
     private List<TreeMap<String /*individual*/, ArrayList<GenotypingSample>>> individualToSampleListMap = new ArrayList<>();
@@ -145,6 +148,13 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     public GenotypingDataQueryBuilder(GigwaSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
     {
         this.req = gsvr;
+		mutualDiscrim = new HashSet<>();
+        for (int i=0; i<req.getDiscriminate().size(); i++) {
+        	Integer discrimIndex = req.getDiscriminate().get(i);
+        	if (discrimIndex != null && i > discrimIndex - 1 && Integer.valueOf(i + 1).equals(req.getDiscriminate().get(discrimIndex - 1)))
+        		mutualDiscrim.add(i);
+        }
+        
         this.fForCounting = fForCounting;
         this.variantQueryDBList = variantQueryDBList;
         Helper.convertIdFiltersToRunFormat(Arrays.asList(this.variantQueryDBList));
@@ -604,8 +614,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                                 finalMatchList.add(allFinalSelectedGenotypeRegexAndFieldExist);
                             }
                         }
-    
-                        if (fMostSameSelected || req.isDiscriminate(g)) {    
+
+                        if (fMostSameSelected || req.isDiscriminate(g)) {
                             BasicDBObject filter = new BasicDBObject("input", "$$gt" + g);
                             filter.put("as", "g");
                             filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$g", fIsMultiRunProject ? Arrays.asList("$$d") : "$$d")));
@@ -623,16 +633,18 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                             if (fMafApplied[g])
                                 addFieldsIn.put("f" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".f" + g); 
     
-                            Integer groupToDiscriminateWith = req.getDiscriminate().get(g);
-                            if (groupToDiscriminateWith != null) {
-                            	groupToDiscriminateWith--;
-                                addFieldsIn.put("dd" + g, new BasicDBObject("$and", Arrays.asList(    /* dd (different dominant) set to true if both groups have exactly one dominant genotype and each group's dominant genotype differs from the other's */
-                                    new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + groupToDiscriminateWith, "$$this"))))))),
-                                    new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + g, "$$this"))))))),
-                                    new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + groupToDiscriminateWith, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith, "$$dgc" + groupToDiscriminateWith)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g, "$$dgc" + g))))))
-                                )));
-    
-                                finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dd" + g, true));
+                            if (!mutualDiscrim.contains(g)) {
+	                            Integer groupToDiscriminateWith = req.getDiscriminate().get(g);
+	                            if (groupToDiscriminateWith != null) {
+	                            	groupToDiscriminateWith--;
+	                                addFieldsIn.put("dd" + g, new BasicDBObject("$and", Arrays.asList(    /* dd (different dominant) set to true if both groups have exactly one dominant genotype and each group's dominant genotype differs from the other's */
+	                                    new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + groupToDiscriminateWith, "$$this"))))))),
+	                                    new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + g, "$$this"))))))),
+	                                    new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + groupToDiscriminateWith, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith, "$$dgc" + groupToDiscriminateWith)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g, "$$dgc" + g))))))
+	                                )));
+	    
+	                                finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dd" + g, true));
+	                            }
                             }
     
                             if (fMostSameSelected)
@@ -702,10 +714,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-        if (nNextCallCount == 1) {
-            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-            catch (Exception ignored) {}
-        }
+//        if (nNextCallCount == 1) {
+//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+//            catch (Exception ignored) {}
+//        }
         return pipeline;
     }
 
