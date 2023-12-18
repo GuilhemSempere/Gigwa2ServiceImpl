@@ -1301,7 +1301,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + gsvr.getMinMaf(i) + ":"
                         + gsvr.getMaxMaf(i) + ":";
         }
-        queryKey += gsvr.isDiscriminate() + ":"
+        queryKey += gsvr.getDiscriminate() + ":"
                   + gsvr.getVariantEffect();
 //        System.out.println(queryKey);
         return Helper.convertToMD5(queryKey);
