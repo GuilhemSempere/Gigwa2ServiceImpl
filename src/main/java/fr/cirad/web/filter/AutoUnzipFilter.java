@@ -19,6 +19,8 @@ package fr.cirad.web.filter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -91,7 +93,14 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 		{
 			if (extension.startsWith("."))
 				extension = extension.substring(1);
+			
+			((HttpServletResponse) response).addHeader("Access-Control-Allow-Origin", hsRequest.getHeader("Origin"));
+			String acceptEncoding = hsRequest.getHeader("Accept-Encoding");
+			boolean fDoGzipCompression = acceptEncoding != null && acceptEncoding.contains("gzip");
+			if (fDoGzipCompression)
+				((HttpServletResponse) response).setHeader("Content-Encoding", "gzip");
 
+			OutputStream os = fDoGzipCompression ? new GZIPOutputStream(response.getOutputStream()) : response.getOutputStream();
 			byte[] buffer = new byte[1024];
 	    	while (ze!=null)
 	    	{
@@ -99,12 +108,12 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 	    		if (fileName.endsWith("." + extension))
 	    		{
 	    			LOG.debug("Sending file " + fileName + " from archive " + f.getName() + " into response");
-					response.setContentType("application/octet-stream;charset=ISO-8859-1");
+//					response.setContentType("application/octet-stream;charset=ISO-8859-1");
 					((HttpServletResponse) response).setHeader("Content-disposition", "inline; filename=" + fileName);
 	            	int len;
 		            while ((len = zis.read(buffer)) > 0)
-		            	response.getOutputStream().write(buffer, 0, len);
-		            response.getOutputStream().close();
+		            	os.write(buffer, 0, len);
+		            os.close();
 		            return;
 	    		}
 	            ze = zis.getNextEntry();
