@@ -78,7 +78,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     
     private GigwaSearchVariantsRequest req;
     
-    private HashSet<Integer> mutualDiscrim = new HashSet<>();;	// end of the query will be skipped for half of the groups mutually discriminating
+    private HashSet<Integer> mutualDiscrim = new HashSet<>();;  // end of the query will be skipped for half of the groups mutually discriminating
     
     /** The individual index to sample list map. */
     private List<TreeMap<String /*individual*/, ArrayList<GenotypingSample>>> individualToSampleListMap = new ArrayList<>();
@@ -122,6 +122,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     static final private HashMap<String, String> genotypePatternToQueryMap = new HashMap<String, String>();
 
     static public final String MAIN_RESULT_PROJECTION_FIELD = "r";
+    static public final String SECONDARY_RESULT_PROJECTION_FIELD = "r2";
 
     static
     {
@@ -148,11 +149,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     public GenotypingDataQueryBuilder(GigwaSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
     {
         this.req = gsvr;
-		mutualDiscrim = new HashSet<>();
+        mutualDiscrim = new HashSet<>();
         for (int i=0; i<req.getDiscriminate().size(); i++) {
-        	Integer discrimIndex = req.getDiscriminate().get(i);
-        	if (discrimIndex != null && i > discrimIndex - 1 && Integer.valueOf(i + 1).equals(req.getDiscriminate().get(discrimIndex - 1)))
-        		mutualDiscrim.add(i);
+            Integer discrimIndex = req.getDiscriminate().get(i);
+            if (discrimIndex != null && i > discrimIndex - 1 && Integer.valueOf(i + 1).equals(req.getDiscriminate().get(discrimIndex - 1)))
+                mutualDiscrim.add(i);
         }
         
         this.fForCounting = fForCounting;
@@ -209,17 +210,17 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 fGotMultiSampleIndividuals = true;
 
         if (!fForCounting || fIsMultiRunProject) {
-        	if (!individualToSampleListMap.isEmpty()) {
-	            List<GenotypingSample> involvedSamples = new ArrayList<>();
-	            for (int filteredGroup : filteredGroups) 
-	                involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
-	
-	            List<String> involvedProjectRuns = Helper.getRunsByProjectInSampleCollection(involvedSamples).get(genotypingProject.getId());
-	            if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
-	                runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
-	                fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
-	            }
-        	}
+            if (!individualToSampleListMap.isEmpty()) {
+                List<GenotypingSample> involvedSamples = new ArrayList<>();
+                for (int filteredGroup : filteredGroups) 
+                    involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
+    
+                List<String> involvedProjectRuns = Helper.getRunsByProjectInSampleCollection(involvedSamples).get(genotypingProject.getId());
+                if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
+                    runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
+                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
+                }
+            }
             
             Integer nAssemblyId = Assembly.getThreadBoundAssembly();
             String refPosField = nAssemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
@@ -288,9 +289,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         
         BasicDBObject idRangeFilter = new BasicDBObject();
         if (currentInterval > 0)
-        	idRangeFilter.append("$gt", taggedVariantList.get(currentInterval - 1).get("_id"));
+            idRangeFilter.append("$gt", taggedVariantList.get(currentInterval - 1).get("_id"));
         if (currentInterval < taggedVariantList.size())
-        	idRangeFilter.append("$lte", taggedVariantList.get(currentInterval).get("_id"));
+            idRangeFilter.append("$lte", taggedVariantList.get(currentInterval).get("_id"));
         if (!idRangeFilter.isEmpty())
             initialMatchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, idRangeFilter));
 
@@ -409,8 +410,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (fIsMultiRunProject)
             groupFields.put("_id", "$_id." + VariantRunDataId.FIELDNAME_VARIANT_ID); // group multi-run records by variant id
 
-        BasicDBObject addFieldsVars = new BasicDBObject();    // used for handling "all or mostly the same" filter
-        BasicDBObject addFieldsIn = new BasicDBObject();    // used for handling "all or mostly the same" filter
+        BasicDBObject addFieldsVars = new BasicDBObject();    // used for handling "all or mostly the same", heterozygosity and discriminate filters
+        BasicDBObject addFieldsIn = new BasicDBObject();    // used for handling "all or mostly the same", heterozygosity and discriminate filters
         BasicDBObject vars = new BasicDBObject();
         BasicDBObject in = new BasicDBObject();
         BasicDBObject subIn = new BasicDBObject();
@@ -534,7 +535,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         hzFilter.put("$gte", req.getMinHeZ(g));
                     if (req.getMaxHeZ(g) != null && req.getMaxHeZ(g) < 100)
                         hzFilter.put("$lte", req.getMaxHeZ(g));
-                    finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".hef" + g, hzFilter));
+                    finalMatchList.add(new BasicDBObject(SECONDARY_RESULT_PROJECTION_FIELD + ".hef" + g, hzFilter));
                 }
     
                 if (fZygosityRegex[g] || fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fCompareBetweenGenotypes[g] || fHezRatioApplied[g] || fMostSameSelected || req.isDiscriminate(g)) {    // we need to calculate extra fields via an additional $let operator
@@ -634,21 +635,21 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                                 addFieldsIn.put("f" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".f" + g); 
     
                             if (!mutualDiscrim.contains(g)) {
-	                            Integer groupToDiscriminateWith = req.getDiscriminate().get(g);
-	                            if (groupToDiscriminateWith != null) {
-	                            	groupToDiscriminateWith--;
-	                                addFieldsIn.put("dd" + g, new BasicDBObject("$and", Arrays.asList(    /* dd (different dominant) set to true if both groups have exactly one dominant genotype and each group's dominant genotype differs from the other's */
-	                                    new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + groupToDiscriminateWith, "$$this"))))))),
-	                                    new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + g, "$$this"))))))),
-	                                    new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + groupToDiscriminateWith, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith, "$$dgc" + groupToDiscriminateWith)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g, "$$dgc" + g))))))
-	                                )));
-	    
-	                                finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".dd" + g, true));
-	                            }
+                                Integer groupToDiscriminateWith = req.getDiscriminate().get(g);
+                                if (groupToDiscriminateWith != null) {
+                                    groupToDiscriminateWith--;
+                                    addFieldsIn.put("dd" + g, new BasicDBObject("$and", Arrays.asList(    /* dd (different dominant) set to true if both groups have exactly one dominant genotype and each group's dominant genotype differs from the other's */
+                                        new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + groupToDiscriminateWith, "$$this"))))))),
+                                        new BasicDBObject("$eq", Arrays.asList(1, new BasicDBObject("$size", new BasicDBObject("$filter", new BasicDBObject("input", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g).append("cond", new BasicDBObject("$eq", Arrays.asList("$$dgc" + g, "$$this"))))))),
+                                        new BasicDBObject("$ne", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + groupToDiscriminateWith, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + groupToDiscriminateWith, "$$dgc" + groupToDiscriminateWith)))), new BasicDBObject("$arrayElemAt", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".d" + g, new BasicDBObject("$indexOfArray", Arrays.asList("$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g, "$$dgc" + g))))))
+                                    )));
+        
+                                    finalMatchList.add(new BasicDBObject(SECONDARY_RESULT_PROJECTION_FIELD + ".dd" + g, true));
+                                }
                             }
     
                             if (fMostSameSelected)
-                                finalMatchList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".ed" + g, true));
+                                finalMatchList.add(new BasicDBObject(SECONDARY_RESULT_PROJECTION_FIELD + ".ed" + g, true));
                         }
                     }
                 }
@@ -698,7 +699,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (addFieldsIn.size() > 0) {
             BasicDBObject addFieldsLet = new BasicDBObject("vars", addFieldsVars);
             addFieldsLet.put("in", addFieldsIn);
-            pipeline.add(new BasicDBObject("$addFields", new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", addFieldsLet))));
+            pipeline.add(new BasicDBObject("$addFields", new BasicDBObject(SECONDARY_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", addFieldsLet))));
         }
 
         if (fExcludeVariantsWithOnlyMissingData) {  // not all runs are selected: some variants may have no data for the selected samples, we don't want to include them
