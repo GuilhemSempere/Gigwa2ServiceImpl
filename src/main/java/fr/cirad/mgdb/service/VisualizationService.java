@@ -10,6 +10,7 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -50,6 +51,7 @@ import fr.cirad.tools.mgdb.GenotypingDataQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryWrapper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
+import fr.cirad.tools.query.GroupedExecutor.TaskWrapper;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
 
@@ -155,11 +157,13 @@ public class VisualizationService {
 
         final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
         final double intervalSize = Math.ceil(Math.max(1, ((double) (gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (double) (gdr.getDisplayedRangeIntervalCount() - 1))));
-        final ArrayList<Thread> threadsToWaitFor = new ArrayList<Thread>();
+        final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
+
         final long rangeMin = gdr.getDisplayedRangeMin();
         final ProgressIndicator finalProgress = progress;
         String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
         
+        ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
         for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++)
         {
             BasicDBList queryList = new BasicDBList();
@@ -175,30 +179,35 @@ public class VisualizationService {
 
             Thread t = new Thread() {
                 public void run() {
-                    if (!finalProgress.isAborted())
-                    {
+                    if (!finalProgress.isAborted()) {
                         long partialCount = mongoTemplate.getCollection(usedVarCollName).countDocuments(new BasicDBObject("$and", queryList));
                         nTotalTreatedVariantCount.addAndGet((int) partialCount);
                         result.put((long) (rangeMin + (chunkIndex*intervalSize)), partialCount);
                         finalProgress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
                     }
+                	else {
+                		for (Future<Void> f : threadsToWaitFor)
+                			f.cancel(true);
+                		LOG.debug("Cancelled query threads for process " + finalProgress.getProcessId());
+                	}
                 }
             };
 
-            if (chunkIndex%GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
-                t.run();    // run synchronously
-            else
-            {
-                threadsToWaitFor.add(t);
-                t.start();    // run asynchronously for better speed
-            }
+            threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(progress.getProcessId(), t)));
+//            if (chunkIndex%GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
+//                t.run();    // run synchronously
+//            else
+//            {
+//                threadsToWaitFor.add(t);
+//                t.start();    // run asynchronously for better speed
+//            }
         }
 
         if (progress.isAborted())
                 return null;
 
-        for (Thread ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
-                ttwf.join();
+        for (Future<Void> ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
+                ttwf.get();
 
         progress.setCurrentStepProgress(100);
         LOG.debug("selectionDensity treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
@@ -283,7 +292,7 @@ public class VisualizationService {
 
 		List<BasicDBObject> baseQuery = buildFstQuery(gdr, useTempColl);
 
-		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
+		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 
@@ -482,7 +491,7 @@ public class VisualizationService {
 
 		List<BasicDBObject> baseQuery = buildTajimaDQuery(gdr, useTempColl);
 
-		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
+		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
 		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
@@ -1087,7 +1096,7 @@ public class VisualizationService {
             	}
             };
 
-            if (chunkIndex%GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
+            if (chunkIndex%MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
                 t.run();    // run synchronously
             else
             {
