@@ -126,15 +126,15 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
     static
     {
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, "This will return all variants whithout applying any filters");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "This will return variants where not all selected individuals have the same genotype");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "This will return variants where all or most selected individuals have the same genotype");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "This will return variants where none of the selected individuals have the same genotype");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "This will return variants where some of the selected individuals have the same genotypes");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "This will return variants where selected individuals are all homozygous with the reference allele");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will return variants where where at least one selected individual is homozygous with the reference allele");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will return variants where selected individuals are all homozygous with an alternate allele");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will return variants where at least one selected individual is homozygous with an alternate allele");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, "This will allow all variants whithout applying any filters");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "This will allow variants where not all selected individuals have the same genotype");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "This will allow variants where all or most selected individuals have the same genotype");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "This will allow variants where none of the selected individuals have the same genotype");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "This will allow variants where some of the selected individuals have the same genotypes");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "This will allow variants where selected individuals are all homozygous with the reference allele");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will allow variants where where at least one selected individual is homozygous with the reference allele");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will allow variants where selected individuals are all homozygous with an alternate allele");
+        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will allow variants where at least one selected individual is homozygous with an alternate allele");
         genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, null);
         genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "$eq");
         genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "$eq" + GigwaSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
