@@ -679,11 +679,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     }
                     
 	                if (nextConcurrentThreadCountReevaluationChunk == null) {
-//		                LOG.debug("Submitting query submission on " + ((GroupedExecutor) executor).getCorePoolSize() + " threads took " + (System.currentTimeMillis() - b4) + "ms");
+//		                LOG.debug("Submitting queries on " + ((GroupedExecutor) executor).getCorePoolSize() + " threads took " + (System.currentTimeMillis() - b4) + "ms");
 	                	((GroupedExecutor) executor).shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
 	                }
-	                else
-	                	executor.shutdown();
 
                     for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
                     	t.get();
@@ -697,6 +695,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	
 	                    mongoTemplate.save(new CachedCount(queryKey, Arrays.asList(partialCountArray)));
                     }
+                    if (nextConcurrentThreadCountReevaluationChunk != null)
+	                	executor.shutdownNow();
                 }
                 catch (CancellationException ignored) {}
                 catch (Exception e) {
@@ -991,11 +991,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                }
 
 		                if (nextConcurrentThreadCountReevaluationChunk == null) {
-//			                LOG.debug("Submitting query submission on " + ((GroupedExecutor) executor).getCorePoolSize() + " threads took " + (System.currentTimeMillis() - b4) + "ms");
+//			                LOG.debug("Submitting queries on " + ((GroupedExecutor) executor).getCorePoolSize() + " threads took " + (System.currentTimeMillis() - b4) + "ms");
 		                	((GroupedExecutor) executor).shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
 		                }
-		                else
-		                	executor.shutdown();
+//		                else
+//		                	executor.shutdown();
 		                
 	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                    	t.get();
@@ -1022,8 +1022,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                
 	                                if (nextConcurrentThreadCountReevaluationChunk == null)
 	                                	((GroupedExecutor) executor).shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
-	            	                else
-	            	                	executor.shutdown();
+//	            	                else
+//	            	                	executor.shutdown();
 
 	                                for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                                	t.get();
@@ -1031,6 +1031,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            mongoTemplate.save(new CachedCount(queryKey, Arrays.asList(partialCountArrayToFill)));
 	                        }
 	                    }
+                        if (nextConcurrentThreadCountReevaluationChunk != null)
+    	                	executor.shutdown();
 	                }
                     catch (CancellationException ignored) {}
                     catch (Exception e) {
