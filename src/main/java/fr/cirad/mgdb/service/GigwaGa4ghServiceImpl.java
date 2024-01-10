@@ -386,70 +386,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return "This is a big database. Given the number of selected individuals, you may only work on a maximum of " + nMaxSeqCount + " sequence(s) at a time.";
     }
-    
-//    private void doPrefiltering(Collection<List<BasicDBObject>> genotypingDataPipelines, MongoCollection<Document> varColl) {
-//    	
-//    	Long b4 = System.currentTimeMillis();
-//        boolean fMultiProjectDB = false;
-//
-//    	List<BasicDBObject> pipeline = new ArrayList<>();  	
-//	    BasicDBObject facetPipelines = new BasicDBObject();
-//	    
-//	    int nChunkIndex = 0;
-//	    for (List<BasicDBObject>genotypingDataPipeline : genotypingDataPipelines) {
-//	        BasicDBObject initialMatch = (BasicDBObject) genotypingDataPipeline.get(0).get("$match");
-//	        if (initialMatch != null) {    // initialMatchForVariantColl will be the one applied to variants collection when pre-filtering
-//	            BasicDBList initialMatchForVariantColl = (BasicDBList) ((BasicDBList) initialMatch.get("$and")).clone();
-//	            if (initialMatchForVariantColl != null) {
-//	                List<DBObject> toAdd = new ArrayList<>(), toRemove = new ArrayList<>();
-//	                for (Object filter : initialMatchForVariantColl) {
-//	                    Object variantIdFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
-//	                    if (variantIdFilter != null) {
-//	                        toAdd.add(new BasicDBObject("_id", variantIdFilter));
-//	                        toRemove.add((DBObject) filter);
-//	                    }
-//	                    else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID)) {
-//	                        toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
-//	                        fMultiProjectDB = true;
-//	                    }
-//	                }
-//	                initialMatchForVariantColl.addAll(toAdd);
-//	                initialMatchForVariantColl.removeAll(toRemove);
-//	            }
-////	            System.err.println(initialMatchForVariantColl);
-//	            
-//	            BasicDBObject matchStage = new BasicDBObject("$match", new BasicDBObject("$and", initialMatchForVariantColl));
-//
-//	            BasicDBObject groupStage = new BasicDBObject("$group",
-//	                    new BasicDBObject("_id", null)
-//	                            .append("count", new BasicDBObject("$sum", 1)));
-//
-//	            List<BasicDBObject> facet = Arrays.asList(matchStage, groupStage);
-//	            facetPipelines.append("chunk" + nChunkIndex++, facet);
-//	        }
-//
-//	    	
-//	        if (nChunkIndex == 25)
-//	        	break;
-//
-//	    }
-//	
-//	    pipeline.add(new BasicDBObject("$facet", facetPipelines));
-//	
-//	    // Execute the aggregation
-//	    AggregateIterable<Document> results = varColl.aggregate(pipeline);
-//	    
-//	
-//	    // Process the results as needed
-//	    int size = 0;
-//	    for (Document result : results) {
-////	        System.out.println(result.toJson());
-//	    	size++;
-//	    }
-//	    LOG.debug("doPrefiltering took " + (System.currentTimeMillis() - b4) + " (" + size + ")");
-//    }
-    
-    
+
     private void applyPreFiltering(List<BasicDBObject> genotypingDataPipeline, boolean fMongoOnSameServer, MongoCollection<Document> varColl) {
         BasicDBObject initialMatch = (BasicDBObject) genotypingDataPipeline.get(0).get("$match");
         if (initialMatch != null) {    // initialMatchForVariantColl will be the one applied to variants collection when pre-filtering
@@ -591,15 +528,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
                     Integer nextConcurrentThreadCountReevaluationChunk = executor instanceof GroupedExecutor ? null : ((ThreadPoolExecutor) executor).getCorePoolSize();
 
-//                    Collection<List<BasicDBObject>> genotypingDataPipelines = new ArrayList<>();
-//                    while (genotypingDataQueryBuilder.hasNext())
-//                    	genotypingDataPipelines.add(genotypingDataQueryBuilder.next());
-//                    
-////                    doPrefiltering(genotypingDataPipelines, varColl);
-//                    
-//                    for (List<BasicDBObject> genotypingDataPipeline : genotypingDataPipelines) {
-//                                            
-                    
                     while (genotypingDataQueryBuilder.hasNext()) {
                     	List<BasicDBObject> genotypingDataPipeline = genotypingDataQueryBuilder.next();
                         final int chunkIndex = shuffledChunkIndexes.get(++i);
@@ -610,29 +538,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         if (progress.isAborted())
                             return 0l;
 
-                        if (finalPreFilterOnVarColl && chunkIndex % 3 == 0) {
-                        	applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
-                    		if (genotypingDataPipeline.isEmpty()) {
-                                partialCountArray[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
-                                finishedThreadCount.incrementAndGet();
-                                continue;
-                    		}
-                    	}
-                        
                         final ProgressIndicator finalProgress = progress;
                         Thread queryThread = new Thread() {
                             @Override
                             public void run() {
                             	if (finalProgress.getError() == null && !finalProgress.isAborted())
 	                                try {
-	                                	if (finalPreFilterOnVarColl && chunkIndex % 3 != 0) {
-	                                		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
-	                                		if (genotypingDataPipeline.isEmpty()) {
-	                                            partialCountArray[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
-	                                            finishedThreadCount.incrementAndGet();
-	                                            return;
-	                                		}
-	                                	}
+                                		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
+                                		if (genotypingDataPipeline.isEmpty()) {
+                                            partialCountArray[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
+                                            finishedThreadCount.incrementAndGet();
+                                            return;
+                                		}
 	                                    MongoCursor<Document> it = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(genotypingDataPipeline).allowDiskUse(isAggregationAllowedToUseDisk()).iterator();
 	                                    partialCountArray[chunkIndex] = it.hasNext() ? ((Number) it.next().get("count")).longValue() : 0;
 	                                    finalProgress.setCurrentStepProgress((short) (finishedThreadCount.incrementAndGet() * 100 / nChunkCount));
@@ -867,16 +784,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                    final int chunkIndex = shuffledChunkIndexes.get(++i);
 		                    if (partialCountMap.size() > 0 && !partialCountMap.containsKey(chunkIndex))
 		                        continue;	// we know there are no matches in this chunk
-		                    
-	                        if (finalPreFilterOnVarColl && chunkIndex % 3 == 0) {
-	                        	applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
-	                    		if (genotypingDataPipeline.isEmpty()) {
-	                    			partialCountArrayToFill[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
-	                                finishedThreadCount.incrementAndGet();
-	                                continue;
-	                    		}
-	                    	}
-		
+		                    		
 	                        if (rangesToCount != null) {	// we need to keep track of the count after searching so prepare queries to run on tmp coll
 			                    BasicDBObject initialMatch = (BasicDBObject) genotypingDataPipeline.get(0).get("$match");
 			                    BasicDBList initialMatchForVariantColl = (BasicDBList) ((BasicDBList) initialMatch.get("$and")).clone();
@@ -904,14 +812,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                            @Override
 	                            public void run() {
 	                            	if (progress.getError() == null && !progress.isAborted()) {
-	                                	if (finalPreFilterOnVarColl && chunkIndex % 3 != 0) {
-	                                		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
-	                                		if (genotypingDataPipeline.isEmpty()) {
-	                                			partialCountArrayToFill[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
-	                                            finishedThreadCount.incrementAndGet();
-	                                            return;
-	                                		}
-	                                	}
+                                		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
+                                		if (genotypingDataPipeline.isEmpty()) {
+                                			partialCountArrayToFill[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
+                                            finishedThreadCount.incrementAndGet();
+                                            return;
+                                		}
 
 	                                    boolean fMergeFailedOnThisChunk = false;
 	                                    if (!hostsNotSupportingMergeOperator.contains(sMongoHost))
@@ -994,8 +900,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //			                LOG.debug("Submitting queries on " + ((GroupedExecutor) executor).getCorePoolSize() + " threads took " + (System.currentTimeMillis() - b4) + "ms");
 		                	((GroupedExecutor) executor).shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
 		                }
-//		                else
-//		                	executor.shutdown();
 		                
 	                    for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                    	t.get();
@@ -1022,8 +926,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                                
 	                                if (nextConcurrentThreadCountReevaluationChunk == null)
 	                                	((GroupedExecutor) executor).shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
-//	            	                else
-//	            	                	executor.shutdown();
 
 	                                for (Future<Void> t : threadsToWaitFor) // wait for all threads before moving to next phase
 	                                	t.get();
@@ -1032,7 +934,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                        }
 	                    }
                         if (nextConcurrentThreadCountReevaluationChunk != null)
-    	                	executor.shutdown();
+    	                	executor.shutdownNow();
 	                }
                     catch (CancellationException ignored) {}
                     catch (Exception e) {
