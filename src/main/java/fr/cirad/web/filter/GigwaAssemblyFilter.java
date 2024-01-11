@@ -64,7 +64,9 @@ public class GigwaAssemblyFilter implements javax.servlet.Filter {
 		        String assembly = req.getHeader("assembly");
         		Assembly.setThreadAssembly(assembly == null ? null : Integer.parseInt(assembly));
 			}
-			catch (NumberFormatException ignored) {}
+			catch (NumberFormatException ignored) {
+				Assembly.setThreadAssembly(null);
+			}
 		}
 
 		fc.doFilter(request, response);

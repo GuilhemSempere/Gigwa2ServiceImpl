@@ -9,9 +9,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -51,6 +49,7 @@ import fr.cirad.tools.mgdb.GenotypingDataQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryBuilder;
 import fr.cirad.tools.mgdb.VariantQueryWrapper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
+import fr.cirad.tools.query.GroupedExecutor;
 import fr.cirad.tools.query.GroupedExecutor.TaskWrapper;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
@@ -151,7 +150,7 @@ public class VisualizationService {
 
         if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
             if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
-				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
+				progress.setError("selectionDensity: Unable to find default position range, make sure current results are in sync with interface filters.");
 				return result;
 			}
 
@@ -164,6 +163,7 @@ public class VisualizationService {
         String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
         
         ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+
         for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++)
         {
             BasicDBList queryList = new BasicDBList();
@@ -194,21 +194,19 @@ public class VisualizationService {
             };
 
             threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(progress.getProcessId(), t)));
-//            if (chunkIndex%GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (GigwaGa4ghServiceImpl.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
-//                t.run();    // run synchronously
-//            else
-//            {
-//                threadsToWaitFor.add(t);
-//                t.start();    // run asynchronously for better speed
-//            }
         }
-
-        if (progress.isAborted())
-                return null;
+        
+        if (executor instanceof GroupedExecutor)
+        	((GroupedExecutor) executor).shutdown(progress.getProcessId());	// important to be sure that all tasks in the group are executed before the queue purges it
+        else
+        	executor.shutdown();
 
         for (Future<Void> ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
-                ttwf.get();
+        	ttwf.get();
 
+		if (progress.isAborted())
+			return null;
+		
         progress.setCurrentStepProgress(100);
         LOG.debug("selectionDensity treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
         progress.markAsComplete();
@@ -281,7 +279,7 @@ public class VisualizationService {
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
 			if (!findDefaultRangeMinMax(gdr, useTempColl ? usedVarCollName : null)) {
-				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
+				progress.setError("selectionFst: Unable to find default position range, make sure current results are in sync with interface filters.");
 				return result;
 			}
 
@@ -292,8 +290,8 @@ public class VisualizationService {
 
 		List<BasicDBObject> baseQuery = buildFstQuery(gdr, useTempColl);
 
-		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
-		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
+		ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+		final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 
 		for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++) {
@@ -439,12 +437,17 @@ public class VisualizationService {
         		}
             };
 
-           executor.execute(t);
+            threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(progress.getProcessId(), t)));
 		}
 
-		executor.shutdown();
-		executor.awaitTermination(Integer.MAX_VALUE, TimeUnit.DAYS);
-
+        if (executor instanceof GroupedExecutor)
+        	((GroupedExecutor) executor).shutdown(progress.getProcessId());	// important to be sure that all tasks in the group are executed before the queue purges it
+        else
+        	executor.shutdown();
+        
+        for (Future<Void> ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
+        	ttwf.get();
+        
 		if (progress.isAborted())
 			return null;
 
@@ -471,7 +474,8 @@ public class VisualizationService {
       
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
-		if (GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gdr, false).size() > 0 && nTempVarCount == 0) {
+		if (GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gdr, false).size() > 0 && nTempVarCount == 0)
+		{
 			progress.setError(Constants.MESSAGE_TEMP_RECORDS_NOT_FOUND);
 			return null;
 		}
@@ -485,15 +489,15 @@ public class VisualizationService {
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
 			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
-				progress.setError("Unable to find default position range, make sure current results are in sync with interface filters.");
+				progress.setError("selectionTajimaD: Unable to find default position range, make sure current results are in sync with interface filters.");
 				return result;
 			}
 
 		List<BasicDBObject> baseQuery = buildTajimaDQuery(gdr, useTempColl);
 
-		int nConcurrentThreads = Math.min(Runtime.getRuntime().availableProcessors(), MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS);
 		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
-		ExecutorService executor = Executors.newFixedThreadPool(nConcurrentThreads);
+        ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+        final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 
 		for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++) {
@@ -514,7 +518,6 @@ public class VisualizationService {
 			windowQuery.set(0, new BasicDBObject("$match", initialMatchStage));
 
 			Thread t = new Thread() {
-				
 				public void run() {
 					if (progress.isAborted())
 						return;
@@ -540,11 +543,16 @@ public class VisualizationService {
 				}
 			};
 
-			executor.execute(t);
+            threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(progress.getProcessId(), t)));
 		}
 
-		executor.shutdown();
-		executor.awaitTermination(Integer.MAX_VALUE, TimeUnit.DAYS);
+        if (executor instanceof GroupedExecutor)
+        	((GroupedExecutor) executor).shutdown(progress.getProcessId());	// important to be sure that all tasks in the group are executed before the queue purges it
+        else
+        	executor.shutdown();
+
+        for (Future<Void> ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
+        	ttwf.get();
 
 		if (progress.isAborted())
 			return null;
@@ -1015,7 +1023,7 @@ public class VisualizationService {
                 return result;
 
 		final int intervalSize = Math.max(1, (int) ((gvfpr.getDisplayedRangeMax() - gvfpr.getDisplayedRangeMin()) / gvfpr.getDisplayedRangeIntervalCount()));
-		final ArrayList<Thread> threadsToWaitFor = new ArrayList<Thread>();
+		final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
 		final long rangeMin = gvfpr.getDisplayedRangeMin();
 		final ProgressIndicator finalProgress = progress;
 
@@ -1029,6 +1037,9 @@ public class VisualizationService {
         	sampleIDsGroupedBySortedIndividuals[k] = samplesByIndividual.get(ind).stream().map(sp -> sp.getId()).collect(Collectors.toList());
             k++;
 		}
+
+        ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+        String taskGroup = "vcfField_" + gvfpr.getVcfField() + "_" + progress.getProcessId();
         
         String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
 		for (int i=0; i<gvfpr.getDisplayedRangeIntervalCount(); i++)
@@ -1096,20 +1107,19 @@ public class VisualizationService {
             	}
             };
 
-            if (chunkIndex%MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS  == (MongoTemplateManager.INITIAL_NUMBER_OF_SIMULTANEOUS_QUERY_THREADS-1))
-                t.run();    // run synchronously
-            else
-            {
-                threadsToWaitFor.add(t);
-                t.start();    // run asynchronously for better speed
-            }
+            threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(taskGroup, t)));
         }
+        
+        if (executor instanceof GroupedExecutor)
+        	((GroupedExecutor) executor).shutdown(taskGroup);	// important to be sure that all tasks in the group are executed before the queue purges it
+        else
+        	executor.shutdown();
 
-        if (progress.isAborted())
-            return null;
+        for (Future<Void> ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
+        	ttwf.get();
 
-        for (Thread ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
-            ttwf.join();
+		if (progress.isAborted())
+			return null;
 
         progress.setCurrentStepProgress(100);
         LOG.debug("selectionVcfFieldPlotData treated " + gvfpr.getDisplayedRangeIntervalCount() + " intervals on sequence " + gvfpr.getDisplayedSequence() + " between " + gvfpr.getDisplayedRangeMin() + " and " + gvfpr.getDisplayedRangeMax() + " in " + (System.currentTimeMillis() - before)/1000f + "s");
