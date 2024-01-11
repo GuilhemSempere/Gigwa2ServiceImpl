@@ -155,7 +155,7 @@ public class VisualizationService {
 			}
 
         final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
-        final double intervalSize = Math.ceil(Math.max(1, ((double) (gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (double) (gdr.getDisplayedRangeIntervalCount() - 1))));
+        final int intervalSize = (int) Math.ceil(Math.max(1, ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (gdr.getDisplayedRangeIntervalCount() - 1))));
         final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
 
         final long rangeMin = gdr.getDisplayedRangeMin();
@@ -163,7 +163,6 @@ public class VisualizationService {
         String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
         
         ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
-
         for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++)
         {
             BasicDBList queryList = new BasicDBList();
@@ -284,7 +283,7 @@ public class VisualizationService {
 			}
 
 		final AtomicInteger nTotalTreatedVariantCount = new AtomicInteger(0);
-		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
+		final int intervalSize = (int) Math.ceil(Math.max(1, ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (gdr.getDisplayedRangeIntervalCount() - 1))));
 		final long rangeMin = gdr.getDisplayedRangeMin();
 		final ProgressIndicator finalProgress = progress;
 
@@ -495,7 +494,7 @@ public class VisualizationService {
 
 		List<BasicDBObject> baseQuery = buildTajimaDQuery(gdr, useTempColl);
 
-		final int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
+		final int intervalSize = (int) Math.ceil(Math.max(1, ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (gdr.getDisplayedRangeIntervalCount() - 1))));
         ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
         final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
 		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
@@ -1003,12 +1002,13 @@ public class VisualizationService {
         ProgressIndicator.registerProgressIndicator(progress);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gvfpr, ga4ghService.getSequenceIDsBeingFilteredOn(gvfpr.getRequest().getSession(), sModule), true);
-	    Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
-	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
-
         MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gvfpr.getRequest()), false);
         long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
+        
+	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gvfpr, ga4ghService.getSequenceIDsBeingFilteredOn(gvfpr.getRequest().getSession(), sModule), true);
+	    Collection<BasicDBList> variantDataQueries = nTempVarCount == 0 ? varQueryWrapper.getVariantRunDataQueries() : varQueryWrapper.getVariantDataQueries();
+	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
+
         if (GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gvfpr, false).size() > 0 && nTempVarCount == 0)
         {
             progress.setError(Constants.MESSAGE_TEMP_RECORDS_NOT_FOUND);
@@ -1022,7 +1022,7 @@ public class VisualizationService {
             if (!findDefaultRangeMinMax(gvfpr, usedVarCollName))
                 return result;
 
-		final int intervalSize = Math.max(1, (int) ((gvfpr.getDisplayedRangeMax() - gvfpr.getDisplayedRangeMin()) / gvfpr.getDisplayedRangeIntervalCount()));
+        final int intervalSize = (int) Math.ceil(Math.max(1, ((gvfpr.getDisplayedRangeMax() - gvfpr.getDisplayedRangeMin()) / (gvfpr.getDisplayedRangeIntervalCount() - 1))));
 		final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
 		final long rangeMin = gvfpr.getDisplayedRangeMin();
 		final ProgressIndicator finalProgress = progress;
@@ -1056,7 +1056,6 @@ public class VisualizationService {
 				crits.add(Criteria.where(startSitePath).lte(gvfpr.getDisplayedRangeMax()));
 
             final Query query = new Query(new Criteria().andOperator(crits.toArray(new Criteria[crits.size()])));
-
             final long chunkIndex = i;
             Thread t = new Thread() {
                 public void run() {
