@@ -1,5 +1,7 @@
 package fr.cirad.mgdb.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -338,10 +340,11 @@ public class VisualizationService {
 
         			double weightedFstSum = 0;
         			double fstWeight = 0;
+        			int partialCount = 0;
 
         			while (it.hasNext()) {
+        				partialCount++;
         				Document variantResult = it.next();
-        				//String variantId = variantResult.getString("_id");
 
         				List<Document> populations = variantResult.getList(FST_RES_POPULATIONS, Document.class);
         				if (populations.size() < 2) {
@@ -396,6 +399,7 @@ public class VisualizationService {
         						averageAlleleFrequency += sampleSizes[popIndex] * alleleFrequencies[allele][popIndex] / totalSize;
         						averageHetFrequency += sampleSizes[popIndex] * hetFrequencies[allele][popIndex] / totalSize;
         					}
+       						averageAlleleFrequency = new BigDecimal(averageAlleleFrequency).setScale(15, RoundingMode.CEILING).doubleValue();	// round it up because it may look like 0.999999999 but actually mean 1
 
         					// Compute allele frequency variance (s²)
         					double alleleVariance = 0.0;
@@ -423,7 +427,7 @@ public class VisualizationService {
 
 							// c = h¯/2
 							double gameteVariance = averageHetFrequency / 2;
-
+							
 							if (!Double.isNaN(populationVariance) && !Double.isNaN(individualVariance) && !Double.isNaN(gameteVariance)) {
 								weightedFstSum += populationVariance;
 								fstWeight += populationVariance + individualVariance + gameteVariance;
@@ -433,9 +437,11 @@ public class VisualizationService {
 
         			result.put(rangeMin + (chunkIndex*intervalSize), weightedFstSum / fstWeight);
         			finalProgress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
+        			nTotalTreatedVariantCount.addAndGet(partialCount);
         		}
             };
 
+//    		System.err.println("submitting for " + progress.getProcessId());
             threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(progress.getProcessId(), t)));
 		}
 
@@ -451,7 +457,7 @@ public class VisualizationService {
 			return null;
 
 		progress.setCurrentStepProgress(100);
-		LOG.info("selectionDensity treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
+		LOG.info("selectionFst treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
 		progress.markAsComplete();
 
 		return new TreeMap<Long, Double>(result);
@@ -712,14 +718,9 @@ public class VisualizationService {
         int projId = Integer.parseInt(info[1]);
 
     	List<Collection<String>> selectedIndividuals = new ArrayList<Collection<String>>();
-        if (gdr.getDisplayedAdditionalGroups() == null) {
-        	List<List<String>> callsetIds = gdr.getAllCallSetIds();
-			for (int i = 0; i < callsetIds.size(); i++)
-				selectedIndividuals.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-        }
-        else
-        	for (Collection<String> group : gdr.getDisplayedAdditionalGroups())
-        		selectedIndividuals.add(group.size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : group.stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+    	List<List<String>> callsetIds = gdr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.add(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         for (Collection<String> group : selectedIndividuals) {
