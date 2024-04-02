@@ -38,6 +38,7 @@ import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
+import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.Run;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
@@ -209,7 +210,7 @@ public class VisualizationService {
 			return null;
 		
         progress.setCurrentStepProgress(100);
-        LOG.debug("selectionDensity treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
+        LOG.debug("selectionDensity treated " + nTotalTreatedVariantCount.get() + " variants on sequence " + gdr.getDisplayedSequence() + " between " + gdr.getDisplayedRangeMin() + " and " + gdr.getDisplayedRangeMax() + " bp in " + (System.currentTimeMillis() - before)/1000f + "s");
         progress.markAsComplete();
 
 		return new TreeMap<Long, Long>(result);
@@ -457,7 +458,8 @@ public class VisualizationService {
 			return null;
 
 		progress.setCurrentStepProgress(100);
-		LOG.info("selectionFst treated " + nTotalTreatedVariantCount.get() + " variants in " + (System.currentTimeMillis() - before)/1000f + "s");
+		LOG.info("selectionFst treated " + nTotalTreatedVariantCount.get() + " variants on sequence " + gdr.getDisplayedSequence() + " between " + gdr.getDisplayedRangeMin() + " and " + gdr.getDisplayedRangeMax() + " bp in " + (System.currentTimeMillis() - before)/1000f + "s");
+
 		progress.markAsComplete();
 
 		return new TreeMap<Long, Double>(result);
@@ -563,7 +565,105 @@ public class VisualizationService {
 			return null;
 
 		progress.setCurrentStepProgress(100);
-		LOG.debug("selectionTajimaD treated in " + (System.currentTimeMillis() - before)/1000f + "s");
+		LOG.info("selectionTajimaD treated " + gdr.getDisplayedRangeIntervalCount() + " intervals on sequence " + gdr.getDisplayedSequence() + " between " + gdr.getDisplayedRangeMin() + " and " + gdr.getDisplayedRangeMax() + " bp in " + (System.currentTimeMillis() - before)/1000f + "s");
+
+		progress.markAsComplete();
+
+		return result;
+	}
+    
+    public Map<Long, Float> selectionMaf(GigwaDensityRequest gdr, String token) throws Exception {
+		long before = System.currentTimeMillis();
+
+        String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
+        String sModule = info[0];
+
+		ProgressIndicator progress = new ProgressIndicator(token, new String[] {"Calculating " + (gdr.getDisplayedVariantType() != null ? gdr.getDisplayedVariantType() + " " : "") + "MAF on sequence " + gdr.getDisplayedSequence()});
+		ProgressIndicator.registerProgressIndicator(progress);
+
+		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
+	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
+	    Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
+	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
+      
+		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
+		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
+		if (GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gdr, false).size() > 0 && nTempVarCount == 0)
+		{
+			progress.setError(Constants.MESSAGE_TEMP_RECORDS_NOT_FOUND);
+			return null;
+		}
+
+		final String vrdCollName = mongoTemplate.getCollectionName(VariantRunData.class);
+		final boolean useTempColl = (nTempVarCount != 0);
+		final String usedVarCollName = useTempColl ? tmpVarColl.getNamespace().getCollectionName() : vrdCollName;
+		final Map<Long, Float> result = new java.util.HashMap<>();
+
+		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
+			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
+				progress.setError("selectionTajimaD: Unable to find default position range, make sure current results are in sync with interface filters.");
+				return result;
+			}
+
+		List<BasicDBObject> baseQuery = buildMafQuery(gdr, useTempColl);
+
+		final int intervalSize = (int) Math.ceil(Math.max(1, ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (gdr.getDisplayedRangeIntervalCount() - 1))));
+        ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
+        final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
+		String refPosPathWithTrailingDot = Assembly.getThreadBoundVariantRefPosPath() + ".";
+
+		for (int i=0; i<gdr.getDisplayedRangeIntervalCount(); i++) {
+			BasicDBObject initialMatchStage = new BasicDBObject();
+			initialMatchStage.put(refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_SEQUENCE, gdr.getDisplayedSequence());
+			if (gdr.getDisplayedVariantType() != null)
+				initialMatchStage.put(VariantData.FIELDNAME_TYPE, gdr.getDisplayedVariantType());
+			BasicDBObject positionSettings = new BasicDBObject();
+			positionSettings.put("$gte", gdr.getDisplayedRangeMin() + (i*intervalSize));
+			positionSettings.put(i < gdr.getDisplayedRangeIntervalCount() - 1 ? "$lt" : "$lte", i < gdr.getDisplayedRangeIntervalCount() - 1 ? gdr.getDisplayedRangeMin() + ((i+1)*intervalSize) : gdr.getDisplayedRangeMax());
+			String startSitePath = refPosPathWithTrailingDot + ReferencePosition.FIELDNAME_START_SITE;
+			initialMatchStage.put(startSitePath, positionSettings);
+			if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
+				mergeVariantQueryDBList(initialMatchStage, variantQueryDBList);
+			final long chunkIndex = i;
+
+			List<BasicDBObject> windowQuery = new ArrayList<BasicDBObject>(baseQuery);
+			windowQuery.set(0, new BasicDBObject("$match", initialMatchStage));
+
+			Thread t = new Thread() {
+				public void run() {
+					if (progress.isAborted())
+						return;
+
+					AggregateIterable<Document> queryResult = mongoTemplate.getCollection(usedVarCollName).aggregate(windowQuery).allowDiskUse(ga4ghService.isAggregationAllowedToUseDisk());
+
+					Document chunk = queryResult.first();  // There's only one interval per query
+					if (chunk == null)
+						return;
+					
+					chunk = (Document) chunk.get(GenotypingDataQueryBuilder.MAIN_RESULT_PROJECTION_FIELD);
+					float freq = chunk.getDouble("f").floatValue();
+					result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Math.min(freq, 100f - freq));
+					
+					progress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
+				}
+			};
+
+            threadsToWaitFor.add((Future<Void>) executor.submit(new TaskWrapper(progress.getProcessId(), t)));
+		}
+
+        if (executor instanceof GroupedExecutor)
+        	((GroupedExecutor) executor).shutdown(progress.getProcessId());	// important to be sure that all tasks in the group are executed before the queue purges it
+        else
+        	executor.shutdown();
+
+        for (Future<Void> ttwf : threadsToWaitFor)    // wait for all threads before moving to next phase
+        	ttwf.get();
+
+		if (progress.isAborted())
+			return null;
+
+		progress.setCurrentStepProgress(100);
+		LOG.debug("selectionMaf treated " + gdr.getDisplayedRangeIntervalCount() + " intervals on sequence " + gdr.getDisplayedSequence() + " between " + gdr.getDisplayedRangeMin() + " and " + gdr.getDisplayedRangeMax() + " bp in " + (System.currentTimeMillis() - before)/1000f + "s");
 		progress.markAsComplete();
 
 		return result;
@@ -969,6 +1069,86 @@ public class VisualizationService {
     	return pipeline;
     }
 
+    private List<BasicDBObject> buildMafQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+    	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
+        String sModule = info[0];
+        int projId = Integer.parseInt(info[1]);
+
+    	List<String> selectedIndividuals = new ArrayList<String>();
+        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+
+        TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
+        individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
+
+        int intervalSize = Math.max(1, (int) ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / gdr.getDisplayedRangeIntervalCount()));
+        List<Long> intervalBoundaries = new ArrayList<Long>();
+        for (int i = 0; i < gdr.getDisplayedRangeIntervalCount(); i++) {
+			intervalBoundaries.add(gdr.getDisplayedRangeMin() + (i*intervalSize));
+		}
+        intervalBoundaries.add(gdr.getDisplayedRangeMax() + 1);
+
+    	List<BasicDBObject> pipeline = buildGenotypeDataQuery(gdr, useTempColl, individualToSampleListMap, true);
+
+        MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
+        GenotypingProject genotypingProject = mongoTemplate.findById(Integer.valueOf(projId), GenotypingProject.class);
+
+        boolean fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
+        boolean fGotMultiSampleIndividuals = (individualToSampleListMap.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent());
+        
+        BasicDBObject vars = new BasicDBObject("gt", getFullPathToGenotypes(sModule, projId, selectedIndividuals, individualToSampleListMap));
+        BasicDBObject in = new BasicDBObject();
+        BasicDBObject subIn = new BasicDBObject();
+    	
+        BasicDBObject inObj;
+        if (fIsMultiRunProject) {
+            BasicDBList condList = new BasicDBList();
+            BasicDBObject addObject = new BasicDBObject("$add", Arrays.asList(1, new BasicDBObject("$cmp", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$$g", 0)), genotypingProject.getPloidyLevel() == 1 ? "1" : "0/1"))));
+            if (!fGotMultiSampleIndividuals)
+                inObj = addObject;    // no need to make sure all genotypes for each individual are equal because there's only one sample per individual 
+            else {
+                condList.add(new BasicDBObject("$eq", new Object[] {new BasicDBObject("$size", "$$g"), 1})); // if we have several distinct genotypes for this individual then we treat it as missing data (no alt allele to take into account)
+                condList.add(addObject);
+                condList.add(0);
+                inObj = new BasicDBObject("$cond", condList);
+            }
+        }
+        else
+            inObj = new BasicDBObject("$add", Arrays.asList(1, new BasicDBObject("$cmp", Arrays.asList("$$g", genotypingProject.getPloidyLevel() == 1 ? "1" : "0/1"))));
+        in.put("a", new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt").append("as", "g").append("in", inObj))));
+
+        if (fIsMultiRunProject)
+            in.put("m", new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt").append("as", "g").append("in", new BasicDBObject("$abs", new BasicDBObject("$cmp", new Object[] {new BasicDBObject("$size", "$$g"), 1}))))));
+        else
+            in.put("m", new BasicDBObject("$subtract", Arrays.asList(individualToSampleListMap.size(), new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt").append("as", "g").append("in", new BasicDBObject("$max", Arrays.asList(0, new BasicDBObject("$cmp", Arrays.asList("$$g", null))))))))));
+
+        BasicDBList condList = new BasicDBList(), divideList = new BasicDBList();
+        condList.add(new BasicDBObject("$eq", new Object[] {"$$m", individualToSampleListMap.size()}));
+        condList.add(null);
+        condList.add(new BasicDBObject("$subtract", new Object[] {individualToSampleListMap.size(), "$$m"}));
+        divideList.add(new BasicDBObject("$multiply", new Object[] {"$$a", 50}));
+        divideList.add(new BasicDBObject("$cond", condList));
+
+        subIn.put("f", new BasicDBObject("$divide", divideList));
+
+        BasicDBObject subVars = in;
+        BasicDBObject subLet = new BasicDBObject("vars", subVars);
+        subLet.put("in", subIn);
+        in = new BasicDBObject("$let", subLet);
+
+        BasicDBObject let = new BasicDBObject("vars", vars);
+        let.put("in", in);
+        
+        Document projectionFields = new Document();
+        projectionFields.put(GenotypingDataQueryBuilder.MAIN_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", let));
+        
+        projectionFields.put(Assembly.getThreadBoundVariantRefPosPath(), 1);
+        projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, 1);
+        projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, 1);
+        pipeline.add(new BasicDBObject("$project", projectionFields));
+
+    	return pipeline;
+    }
+
 
     private BasicDBList getFullPathToGenotypes(String sModule, int projId, Collection<String> selectedIndividuals, Map<String, List<GenotypingSample>> individualToSampleListMap){
     	BasicDBList result = new BasicDBList();
@@ -1122,7 +1302,7 @@ public class VisualizationService {
 			return null;
 
         progress.setCurrentStepProgress(100);
-        LOG.debug("selectionVcfFieldPlotData treated " + gvfpr.getDisplayedRangeIntervalCount() + " intervals on sequence " + gvfpr.getDisplayedSequence() + " between " + gvfpr.getDisplayedRangeMin() + " and " + gvfpr.getDisplayedRangeMax() + " in " + (System.currentTimeMillis() - before)/1000f + "s");
+        LOG.debug("selectionVcfFieldPlotData treated " + gvfpr.getDisplayedRangeIntervalCount() + " intervals on sequence " + gvfpr.getDisplayedSequence() + " between " + gvfpr.getDisplayedRangeMin() + " and " + gvfpr.getDisplayedRangeMax() + " bp in " + (System.currentTimeMillis() - before)/1000f + "s");
         progress.markAsComplete();
 
         return new TreeMap<Long, Integer>(result);
