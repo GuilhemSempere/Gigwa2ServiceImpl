@@ -134,6 +134,7 @@ import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
 import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
+import fr.cirad.mgdb.model.mongo.subtypes.Run;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
@@ -403,6 +404,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     else if (null != ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID)) {
                         toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
                         fMultiProjectDB = true;
+                    }
+                    else {
+                    	Object runFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_RUNNAME);
+                    	if (runFilter != null) {
+	                    	toAdd.add(new BasicDBObject(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_RUNNAME, runFilter));
+	                        toRemove.add((DBObject) filter);    // no project info to filter on in the variants collection
+                        }
                     }
                 }
                 initialMatchForVariantColl.addAll(toAdd);

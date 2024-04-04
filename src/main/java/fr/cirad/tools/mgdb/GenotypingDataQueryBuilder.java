@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.math.util.MathUtils;
 import org.apache.log4j.Logger;
 import org.bson.Document;
@@ -322,15 +323,15 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         }
         pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", initialMatchList)));
 
-        int maxi = filteredGroups.stream().max(Integer::compare).get() + 1;
-        boolean[] fZygosityRegex = new boolean[maxi];
-        boolean[] fNegateMatch = new boolean[maxi];
-        boolean[] fOr = new boolean[maxi];
-        boolean[] fMafApplied = new boolean[maxi];
-        boolean[] fMissingDataApplied = new boolean[maxi];
-        boolean[] fHezRatioApplied = new boolean[maxi];
-        boolean[] fCompareBetweenGenotypes = new boolean[maxi];
-        String[] cleanOperator = new String[maxi];
+        int maxGroupIndex = filteredGroups.stream().max(Integer::compare).get() + 1;
+        boolean[] fZygosityRegex = new boolean[maxGroupIndex];
+        boolean[] fNegateMatch = new boolean[maxGroupIndex];
+        boolean[] fOr = new boolean[maxGroupIndex];
+        boolean[] fMafApplied = new boolean[maxGroupIndex];
+        boolean[] fMissingDataApplied = new boolean[maxGroupIndex];
+        boolean[] fHezRatioApplied = new boolean[maxGroupIndex];
+        boolean[] fCompareBetweenGenotypes = new boolean[maxGroupIndex];
+        String[] cleanOperator = new String[maxGroupIndex];
 
         if (req.getNumberGroups() > 0)
             for (int g : filteredGroups) {
@@ -538,7 +539,14 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     finalMatchList.add(new BasicDBObject(SECONDARY_RESULT_PROJECTION_FIELD + ".hef" + g, hzFilter));
                 }
     
-                if (fZygosityRegex[g] || fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fCompareBetweenGenotypes[g] || fHezRatioApplied[g] || fMostSameSelected || req.isDiscriminate(g)) {    // we need to calculate extra fields via an additional $let operator
+                boolean innerLetNeeded = false;
+	            for (boolean[] booleans : Arrays.asList(new boolean[] {fExcludeVariantsWithOnlyMissingData, fMostSameSelected, req.getDiscriminate().stream().anyMatch(n -> n != null)}, fZygosityRegex, fMafApplied, fCompareBetweenGenotypes, fHezRatioApplied))
+	            	if (ArrayUtils.contains(booleans, true)) {
+		            	innerLetNeeded = true;
+		            	break;
+		            }
+         	  
+                if (innerLetNeeded) {    // we need to calculate extra fields via an additional $let operator
                     // keep previously computed fields
                     if (fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || (fCompareBetweenGenotypes[g]) || fHezRatioApplied[g] || req.isDiscriminate(g))
                         subIn.put("m" + g, "$$m" + g);
@@ -624,16 +632,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                             
                             addFieldsVars.put("dgc" + g, new BasicDBObject("$max", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g));    // dominant genotype count
                             Object minimumDominantGenotypeCount = new BasicDBObject("$multiply", Arrays.asList(new BasicDBObject("$subtract", new Object[] {nGroupSize, "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g}), req.getMostSameRatio(g) / 100f));
-                            
+
                             if (fMostSameSelected)
                                 addFieldsIn.put("ed" + g, new BasicDBObject("$gte", Arrays.asList("$$dgc" + g, minimumDominantGenotypeCount)));    // flag telling whether or not we have enough dominant genotypes to reach the required ratio
-                            
-                            if (fMissingDataApplied[g] || fMostSameSelected)
-                                addFieldsIn.put("m" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".m" + g);
-                            
-                            if (fMafApplied[g])
-                                addFieldsIn.put("f" + g, "$" + MAIN_RESULT_PROJECTION_FIELD + ".f" + g); 
-    
+
                             if (!mutualDiscrim.contains(g)) {
                                 Integer groupToDiscriminateWith = req.getDiscriminate().get(g);
                                 if (groupToDiscriminateWith != null) {
