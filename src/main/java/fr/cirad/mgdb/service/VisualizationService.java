@@ -313,9 +313,6 @@ public class VisualizationService {
 			List<BasicDBObject> windowQuery = new ArrayList<BasicDBObject>(baseQuery);
 			windowQuery.set(0, new BasicDBObject("$match", initialMatchStage));
 
-			//try { System.out.println(new ObjectMapper().writeValueAsString(windowQuery)); }
-            //catch (Exception ignored) {}
-
             Thread t = new Thread() {
             	public void run() {
             		if (finalProgress.isAborted())
@@ -476,8 +473,6 @@ public class VisualizationService {
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
 	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
-	    Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
-	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
       
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -487,17 +482,18 @@ public class VisualizationService {
 			return null;
 		}
 
+        Collection<BasicDBList> variantDataQueries = nTempVarCount == 0 ? varQueryWrapper.getVariantRunDataQueries() : varQueryWrapper.getVariantDataQueries();
+        final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
 		final String vrdCollName = mongoTemplate.getCollectionName(VariantRunData.class);
 		final boolean useTempColl = (nTempVarCount != 0);
 		final String usedVarCollName = useTempColl ? tmpVarColl.getNamespace().getCollectionName() : vrdCollName;
 		final ConcurrentHashMap<Long, Double> tajimaD = new ConcurrentHashMap<Long, Double>();
 		final ConcurrentHashMap<Long, Double> segregatingSites = new ConcurrentHashMap<Long, Double>();
-		final List<Map<Long, Double>> result = Arrays.asList(tajimaD, segregatingSites);
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
 			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
 				progress.setError("selectionTajimaD: Unable to find default position range, make sure current results are in sync with interface filters.");
-				return result;
+				return new ArrayList<>();
 			}
 
 		List<BasicDBObject> baseQuery = buildTajimaDQuery(gdr, useTempColl);
@@ -569,7 +565,7 @@ public class VisualizationService {
 
 		progress.markAsComplete();
 
-		return result;
+		return Arrays.asList(new TreeMap<>(tajimaD), new TreeMap<>(segregatingSites));
 	}
     
     public Map<Long, Float> selectionMaf(GigwaDensityRequest gdr, String token) throws Exception {
@@ -583,9 +579,7 @@ public class VisualizationService {
 
 		final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
 	    VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gdr, ga4ghService.getSequenceIDsBeingFilteredOn(gdr.getRequest().getSession(), sModule), true);
-	    Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
-	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
-      
+
 		MongoCollection<Document> tmpVarColl = ga4ghService.getTemporaryVariantCollection(sModule, tokenManager.readToken(gdr.getRequest()), false);
 		long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
 		if (GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gdr, false).size() > 0 && nTempVarCount == 0)
@@ -594,10 +588,12 @@ public class VisualizationService {
 			return null;
 		}
 
+	    Collection<BasicDBList> variantDataQueries = nTempVarCount == 0 ? varQueryWrapper.getVariantRunDataQueries() : varQueryWrapper.getVariantDataQueries();
+	    final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
 		final String vrdCollName = mongoTemplate.getCollectionName(VariantRunData.class);
 		final boolean useTempColl = (nTempVarCount != 0);
 		final String usedVarCollName = useTempColl ? tmpVarColl.getNamespace().getCollectionName() : vrdCollName;
-		final Map<Long, Float> result = new java.util.HashMap<>();
+		final Map<Long, Float> result = new ConcurrentHashMap<>();
 
 		if (gdr.getDisplayedRangeMin() == null || gdr.getDisplayedRangeMax() == null)
 			if (!findDefaultRangeMinMax(gdr, usedVarCollName)) {
@@ -606,7 +602,7 @@ public class VisualizationService {
 			}
 
 		List<BasicDBObject> baseQuery = buildMafQuery(gdr, useTempColl);
-
+		
 		final int intervalSize = (int) Math.ceil(Math.max(1, ((gdr.getDisplayedRangeMax() - gdr.getDisplayedRangeMin()) / (gdr.getDisplayedRangeIntervalCount() - 1))));
         ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
         final ArrayList<Future<Void>> threadsToWaitFor = new ArrayList<>();
@@ -628,7 +624,7 @@ public class VisualizationService {
 
 			List<BasicDBObject> windowQuery = new ArrayList<BasicDBObject>(baseQuery);
 			windowQuery.set(0, new BasicDBObject("$match", initialMatchStage));
-
+			
 			Thread t = new Thread() {
 				public void run() {
 					if (progress.isAborted())
@@ -637,12 +633,14 @@ public class VisualizationService {
 					AggregateIterable<Document> queryResult = mongoTemplate.getCollection(usedVarCollName).aggregate(windowQuery).allowDiskUse(ga4ghService.isAggregationAllowedToUseDisk());
 
 					Document chunk = queryResult.first();  // There's only one interval per query
-					if (chunk == null)
-						return;
 					
-					chunk = (Document) chunk.get(GenotypingDataQueryBuilder.MAIN_RESULT_PROJECTION_FIELD);
-					float freq = chunk.getDouble("f").floatValue();
-					result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Math.min(freq, 100f - freq));
+					if (chunk == null)
+						result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Float.NaN);
+					else {
+						chunk = (Document) chunk.get(GenotypingDataQueryBuilder.MAIN_RESULT_PROJECTION_FIELD);
+						float freq = chunk.getDouble("f").floatValue();
+						result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Math.min(freq, 100f - freq));
+					}
 					
 					progress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
 				}
