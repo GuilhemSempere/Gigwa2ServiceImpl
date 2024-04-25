@@ -38,7 +38,6 @@ import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
-import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.Run;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
@@ -637,9 +636,13 @@ public class VisualizationService {
 					if (chunk == null)
 						result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Float.NaN);
 					else {
-						chunk = (Document) chunk.get(GenotypingDataQueryBuilder.MAIN_RESULT_PROJECTION_FIELD);
-						float freq = chunk.getDouble("f").floatValue();
-						result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Math.min(freq, 100f - freq));
+						int nVariantsInInterval = chunk.getInteger("n");
+						if (nVariantsInInterval == 0)
+							result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Float.NaN);
+						else {
+							float freq = chunk.getDouble("t").floatValue() / nVariantsInInterval;
+							result.put((gdr.getDisplayedRangeMin() + (chunkIndex*intervalSize)), Math.min(freq, 100f - freq));
+						}
 					}
 					
 					progress.setCurrentStepProgress((short) result.size() * 100 / gdr.getDisplayedRangeIntervalCount());
@@ -1127,6 +1130,7 @@ public class VisualizationService {
         divideList.add(new BasicDBObject("$cond", condList));
 
         subIn.put("f", new BasicDBObject("$divide", divideList));
+        subIn.put("n", new BasicDBObject("$cond", Arrays.asList(new BasicDBObject("$eq", new Object[] {"$$m", individualToSampleListMap.size()}), 0, 1)));
 
         BasicDBObject subVars = in;
         BasicDBObject subLet = new BasicDBObject("vars", subVars);
@@ -1138,15 +1142,16 @@ public class VisualizationService {
         
         Document projectionFields = new Document();
         projectionFields.put(GenotypingDataQueryBuilder.MAIN_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", let));
-        
-        projectionFields.put(Assembly.getThreadBoundVariantRefPosPath(), 1);
-        projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, 1);
-        projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, 1);
         pipeline.add(new BasicDBObject("$project", projectionFields));
+        
+    	BasicDBObject intervalGroup = new BasicDBObject();	// prepare sum of frequencies + number of variants accounted for, so average can be calculated just by dividing
+    	intervalGroup.put("_id", null);
+    	intervalGroup.put("n", new BasicDBObject("$sum", "$r.n"));
+    	intervalGroup.put("t", new BasicDBObject("$sum", new BasicDBObject("$cond", Arrays.asList(new BasicDBObject("$lte", new Object[] {"$r.f", 50}), "$r.f", new BasicDBObject("$subtract", new Object[] {100, "$r.f"})))));
+    	pipeline.add(new BasicDBObject("$group", intervalGroup));
 
     	return pipeline;
     }
-
 
     private BasicDBList getFullPathToGenotypes(String sModule, int projId, Collection<String> selectedIndividuals, Map<String, List<GenotypingSample>> individualToSampleListMap){
     	BasicDBList result = new BasicDBList();
