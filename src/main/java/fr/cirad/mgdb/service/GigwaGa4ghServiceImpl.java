@@ -346,19 +346,22 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     private String isSearchedDatasetReasonablySized(GigwaSearchVariantsRequest gsvr) throws Exception
     {
+        List<Integer> groupsForWhichToFilterOnGenotypingData = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
+        if (groupsForWhichToFilterOnGenotypingData.isEmpty())
+            return null;    // no genotyping data filtering involved
+
         String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
         List<List<String>> callsetIds = gsvr.getAllCallSetIds();
 
-        List<Integer> groupsForWhichToFilterOnGenotypingData = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
         int nIndCount = 0;
         for (int i = 0; i < callsetIds.size(); i++)
         	if (groupsForWhichToFilterOnGenotypingData.contains(i))
         		nIndCount += callsetIds.get(i).size();
         if (nIndCount == 0)
-            return null;    // no genotyping data filtering involved
+        	nIndCount = MgdbDao.getProjectIndividuals(info[0], projId).size();
 
         int nMaxBillionGenotypesInvolved = 1;    // default
         try
@@ -378,7 +381,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         if (nSelectedSeqCount == 1)
             return null;    // we can't expect user to select less than a single sequence
 
-        int nAvgVariantsPerSeq = (int) (mongoTemplate.count(new Query(), VariantData.class) / Math.max(1, proj.getContigs(Assembly.getThreadBoundAssembly()).size()));
+        int nAvgVariantsPerSeq = (int) (Helper.estimDocCount(mongoTemplate, VariantData.class) / Math.max(1, proj.getContigs(Assembly.getThreadBoundAssembly()).size()));
         BigInteger maxSeqCount = BigInteger.valueOf(1000000000).multiply(BigInteger.valueOf(nMaxBillionGenotypesInvolved)).divide(BigInteger.valueOf(nAvgVariantsPerSeq).multiply(BigInteger.valueOf(nIndCount)));
         int nMaxSeqCount = Math.max(1, maxSeqCount.intValue());
 
