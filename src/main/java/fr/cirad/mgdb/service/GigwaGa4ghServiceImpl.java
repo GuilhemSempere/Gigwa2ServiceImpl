@@ -2863,6 +2863,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         BasicDBObject whereQuery = new BasicDBObject();
         whereQuery.put("_id", Pattern.compile(".*\\Q" + lookupText + "\\E.*", Pattern.CASE_INSENSITIVE));
+        whereQuery.put(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_PROJECT_ID, projectId);
 
         int maxSize = 50;
         try {
