@@ -814,6 +814,8 @@ public class VisualizationService {
     private static final String FST_RES_POPULATIONS = "ps";
 
     private List<BasicDBObject> buildFstQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+//		System.err.println("Fst : " + gdr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+		
     	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
@@ -937,12 +939,16 @@ public class VisualizationService {
     private static final String TJD_RES_TAJIMAD = "tjd";
 
     private List<BasicDBObject> buildTajimaDQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+//		System.err.println("Tajima : " + gdr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+
     	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<String> selectedIndividuals = new ArrayList<String>();
-        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+    	List<List<String>> callsetIds = gdr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.addAll(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
@@ -1071,12 +1077,16 @@ public class VisualizationService {
     }
 
     private List<BasicDBObject> buildMafQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+//		System.err.println("MAF : " + gdr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+
     	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<String> selectedIndividuals = new ArrayList<String>();
-        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+    	List<List<String>> callsetIds = gdr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.addAll(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
@@ -1176,6 +1186,8 @@ public class VisualizationService {
 
     
     public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr, String token) throws Exception {
+//		System.err.println(gvfpr.getVcfField() + " : " + gvfpr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+
         long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gvfpr.getVariantSetId(), 2);
@@ -1211,13 +1223,15 @@ public class VisualizationService {
 		final long rangeMin = gvfpr.getDisplayedRangeMin();
 		final ProgressIndicator finalProgress = progress;
 
-		if (gvfpr.getPlotIndividuals() == null || gvfpr.getPlotIndividuals().size() == 0)
-			gvfpr.setPlotIndividuals(MgdbDao.getProjectIndividuals(sModule, projId));
+    	List<String> selectedIndividuals = new ArrayList<String>();
+    	List<List<String>> callsetIds = gvfpr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.addAll(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
-        List<Integer>[] sampleIDsGroupedBySortedIndividuals = new List[gvfpr.getPlotIndividuals().size()];
-        TreeMap<String, ArrayList<GenotypingSample>> samplesByIndividual = MgdbDao.getSamplesByIndividualForProject(sModule, projId, gvfpr.getPlotIndividuals());
+        List<Integer>[] sampleIDsGroupedBySortedIndividuals = new List[selectedIndividuals.size()];
+        TreeMap<String, ArrayList<GenotypingSample>> samplesByIndividual = MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals);
         int k = 0;
-        for (String ind : gvfpr.getPlotIndividuals()) {
+        for (String ind : selectedIndividuals) {
         	sampleIDsGroupedBySortedIndividuals[k] = samplesByIndividual.get(ind).stream().map(sp -> sp.getId()).collect(Collectors.toList());
             k++;
 		}
@@ -1251,7 +1265,7 @@ public class VisualizationService {
 
             			BasicDBObject group = new BasicDBObject();
             			ArrayList<Object> individualValuePaths = new ArrayList<>();
-            			for (int j=0; j<gvfpr.getPlotIndividuals().size(); j++)
+            			for (int j=0; j<selectedIndividuals.size(); j++)
             			{
             				List<Integer> individualSamples = sampleIDsGroupedBySortedIndividuals[j];
             				if (individualSamples.size() == 1)
