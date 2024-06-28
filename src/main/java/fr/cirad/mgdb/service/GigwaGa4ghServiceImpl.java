@@ -146,6 +146,7 @@ import fr.cirad.model.GigwaSearchVariantsResponse;
 import fr.cirad.security.base.IRoleDefinition;
 import fr.cirad.tools.AlphaNumericComparator;
 import fr.cirad.tools.AppConfig;
+import fr.cirad.tools.ExperimentalFeature;
 import fr.cirad.tools.Helper;
 import fr.cirad.tools.ProgressIndicator;
 import fr.cirad.tools.SessionAttributeAwareThread;
@@ -346,19 +347,22 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     private String isSearchedDatasetReasonablySized(GigwaSearchVariantsRequest gsvr) throws Exception
     {
+        List<Integer> groupsForWhichToFilterOnGenotypingData = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
+        if (groupsForWhichToFilterOnGenotypingData.isEmpty())
+            return null;    // no genotyping data filtering involved
+
         String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
         List<List<String>> callsetIds = gsvr.getAllCallSetIds();
 
-        List<Integer> groupsForWhichToFilterOnGenotypingData = GenotypingDataQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
         int nIndCount = 0;
         for (int i = 0; i < callsetIds.size(); i++)
         	if (groupsForWhichToFilterOnGenotypingData.contains(i))
         		nIndCount += callsetIds.get(i).size();
         if (nIndCount == 0)
-            return null;    // no genotyping data filtering involved
+        	nIndCount = MgdbDao.getProjectIndividuals(info[0], projId).size();
 
         int nMaxBillionGenotypesInvolved = 1;    // default
         try
@@ -378,7 +382,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         if (nSelectedSeqCount == 1)
             return null;    // we can't expect user to select less than a single sequence
 
-        int nAvgVariantsPerSeq = (int) (mongoTemplate.count(new Query(), VariantData.class) / Math.max(1, proj.getContigs(Assembly.getThreadBoundAssembly()).size()));
+        int nAvgVariantsPerSeq = (int) (Helper.estimDocCount(mongoTemplate, VariantData.class) / Math.max(1, proj.getContigs(Assembly.getThreadBoundAssembly()).size()));
         BigInteger maxSeqCount = BigInteger.valueOf(1000000000).multiply(BigInteger.valueOf(nMaxBillionGenotypesInvolved)).divide(BigInteger.valueOf(nAvgVariantsPerSeq).multiply(BigInteger.valueOf(nIndCount)));
         int nMaxSeqCount = Math.max(1, maxSeqCount.intValue());
 
@@ -992,8 +996,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         Map<String, HashMap<String, Float>> annotationFieldThresholdsByPop = new HashMap<>();
         List<List<String>> callsetIds = gsver.getAllCallSetIds();
         for (int i = 0; i < callsetIds.size(); i++) {
-            individualsByPop.put("Group" + (i+1), callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
-            annotationFieldThresholdsByPop.put("Group" + (i+1), gsver.getAnnotationFieldThresholds(i));
+            individualsByPop.put(gsver.getGroupName(i), callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+            annotationFieldThresholdsByPop.put(gsver.getGroupName(i), gsver.getAnnotationFieldThresholds(i));
         }
 
         Collection<String> individualsToExport = gsver.getExportedIndividuals().size() > 0 ? gsver.getExportedIndividuals() : MgdbDao.getProjectIndividuals(sModule, projId);
@@ -2834,16 +2838,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public TreeMap<String, HashMap<String, String>> getExportFormats() {
+    	boolean enableExperimentalFeatures = Boolean.TRUE.equals(Boolean.parseBoolean(appConfig.get("enableExperimentalFeatures")));
         TreeMap<String, HashMap<String, String>> exportFormats = new TreeMap<>();
         try {
-            for (IExportHandler exportHandler : Stream.of(AbstractIndividualOrientedExportHandler.getIndividualOrientedExportHandlers().values(), AbstractMarkerOrientedExportHandler.getMarkerOrientedExportHandlers().values()).flatMap(Collection::stream).collect(Collectors.toList())) {
-                HashMap<String, String> info = new HashMap<>();
-                info.put("desc", exportHandler.getExportFormatDescription());
-                info.put("supportedPloidyLevels", StringUtils.join(ArrayUtils.toObject(exportHandler.getSupportedPloidyLevels()), ";"));
-                info.put("dataFileExtensions", StringUtils.join(exportHandler.getExportDataFileExtensions(), ";"));
-                info.put("supportedVariantTypes", StringUtils.join(exportHandler.getSupportedVariantTypes(), ";"));
-                exportFormats.put(exportHandler.getExportFormatName(), info);
-            }
+            for (IExportHandler exportHandler : Stream.of(AbstractIndividualOrientedExportHandler.getIndividualOrientedExportHandlers().values(), AbstractMarkerOrientedExportHandler.getMarkerOrientedExportHandlers().values()).flatMap(Collection::stream).collect(Collectors.toList()))
+                if (enableExperimentalFeatures || !ExperimentalFeature.class.isAssignableFrom(exportHandler.getClass())) {
+	            	HashMap<String, String> info = new HashMap<>();
+	                info.put("desc", exportHandler.getExportFormatDescription());
+	                info.put("supportedPloidyLevels", StringUtils.join(ArrayUtils.toObject(exportHandler.getSupportedPloidyLevels()), ";"));
+	                info.put("dataFileExtensions", StringUtils.join(exportHandler.getExportDataFileExtensions(), ";"));
+	                info.put("supportedVariantTypes", StringUtils.join(exportHandler.getSupportedVariantTypes(), ";"));
+	                exportFormats.put(exportHandler.getExportFormatName(), info);
+	            }
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException ex) {
             LOG.debug("error", ex);
         }
@@ -2860,6 +2866,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         BasicDBObject whereQuery = new BasicDBObject();
         whereQuery.put("_id", Pattern.compile(".*\\Q" + lookupText + "\\E.*", Pattern.CASE_INSENSITIVE));
+        whereQuery.put(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_PROJECT_ID, projectId);
 
         int maxSize = 50;
         try {
