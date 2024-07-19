@@ -1296,9 +1296,102 @@ public class VisualizationService {
             			if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
             				matchList.addAll(variantQueryDBList);
             			pipeline.add(0, new BasicDBObject("$match", new BasicDBObject("$and", matchList)));
-
+            			
+            			/*
+            			 * pipeline should look like this in order to be able to skip initial query (for finding IDs) and average results on number of non-missing genotypes
+            			 * however, need to check how this would behave with multi-run projects (possibly need to $group, which would avoid the need for the final $arrayElemAt)
+db.variants.aggregate([
+    {
+        "$match": {
+            "$and": [
+                {
+                    "rp.ch": "VANPL_A_00001"
+                },
+                {
+                    "rp.ss": {
+                        "$gte": 15977
+                    }
+                },
+                {
+                    "rp.ss": {
+                        "$lt": 88446
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "$lookup": {
+            "from": "variantRunData",
+            "let": {
+                "localId": "$_id"
+            },
+            "pipeline": [
+                {
+                    "$match": {
+                        "$expr": {
+                            "$eq": [
+                                "$_id.vi",
+                                "$$localId"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "$project": {
+                        "vals": {
+                            "$filter": {
+                                "input": [
+                                    "$sp.92.ai.DP",
+                                    "$sp.91.ai.DP",
+                                    "$sp.69.ai.DP",
+                                    "$sp.88.ai.DP",
+                                    "$sp.72.ai.DP"
+                                ],
+                                "as": "val",
+                                "cond": {
+                                    "$ne": [
+                                        "$$val",
+                                        null
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "as": "vrd"
+        }
+    },
+    {
+        "$project": {
+            "r": {
+                "$let": {
+                    "vars": {
+                        "values": {
+                            "$arrayElemAt": [
+                                "$vrd",
+                                0
+                            ]
+                        }
+                    },
+                    "in": {
+                        "DP": {
+                            "$sum": "$$values.vals"
+                        },
+                        "valCount": {
+                            "$size": "$$values.vals"
+                        }
+                    }
+                }
+            }
+        }
+    }
+])
+            			 */
+            			
 	        			Iterator<Document> it = mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantRunData.class)).aggregate(pipeline).iterator();
-	        			result.put(rangeMin + (chunkIndex*intervalSize), it.hasNext() ? Double.valueOf(it.next().get(gvfpr.getVcfField()).toString()).intValue() : 0);
+	        			result.put(rangeMin + (chunkIndex*intervalSize), it.hasNext() ? Double.valueOf(it.next().get(gvfpr.getVcfField()).toString()).intValue() / variantsInInterval.size() : 0);
 	        			finalProgress.setCurrentStepProgress((short) result.size() * 100 / gvfpr.getDisplayedRangeIntervalCount());
             		}
             	}
