@@ -1259,139 +1259,42 @@ public class VisualizationService {
                 public void run() {
                     if (!finalProgress.isAborted())
                     {
-                        List<String> variantsInInterval = mongoTemplate.getCollection(usedVarCollName).distinct("_id", query.getQueryObject(), String.class).into(new ArrayList<>());
-
-                        final ArrayList<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
-
-            			BasicDBObject group = new BasicDBObject();
-            			ArrayList<Object> individualValuePaths = new ArrayList<>();
-            			for (int j=0; j<selectedIndividuals.size(); j++)
-            			{
-            				List<Integer> individualSamples = sampleIDsGroupedBySortedIndividuals[j];
-            				if (individualSamples.size() == 1)
-            					individualValuePaths.add("$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSamples.get(0) + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gvfpr.getVcfField());
-            				else
-            				{	// only take into account the sample with the highest value
-            					if (group.size() == 0)
-            						group.put("_id", null);
-            					for (int l=0; l<variantsInInterval.size(); l++)
-            					{
-                					ArrayList<BasicDBObject> sampleFields = new ArrayList<>();
-	            					for (int k=0; k<individualSamples.size(); k++)
-	            					{
-	            						if (l == 0)
-	            							group.put(gvfpr.getVcfField() + individualSamples.get(k), new BasicDBObject("$addToSet", "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSamples.get(k) + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gvfpr.getVcfField()));
-	                					sampleFields.add(new BasicDBObject("$arrayElemAt", new Object[] {"$" + gvfpr.getVcfField() + individualSamples.get(k), l}));
-	            					}
-                					individualValuePaths.add(new BasicDBObject("$max", sampleFields));
-            					}
-            				}
-            			}
-            			if (group.size() > 0)
-            				pipeline.add(new BasicDBObject("$group", group));
-            			pipeline.add(new BasicDBObject("$project", new BasicDBObject(gvfpr.getVcfField(), new BasicDBObject("$sum", individualValuePaths))));
+                    	List<String> variantsInInterval = mongoTemplate.getCollection(usedVarCollName).distinct("_id", query.getQueryObject(), String.class).into(new ArrayList<>());	// oddly, it is faster to run a pre-query than to use $lookup
+	                    final ArrayList<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
 
             			BasicDBList matchList = new BasicDBList();
             			matchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", variantsInInterval)));
             			if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
             				matchList.addAll(variantQueryDBList);
-            			pipeline.add(0, new BasicDBObject("$match", new BasicDBObject("$and", matchList)));
-            			
-            			/*
-            			 * pipeline should look like this in order to be able to skip initial query (for finding IDs) and average results on number of non-missing genotypes
-            			 * however, need to check how this would behave with multi-run projects (possibly need to $group, which would avoid the need for the final $arrayElemAt)
-db.variants.aggregate([
-    {
-        "$match": {
-            "$and": [
-                {
-                    "rp.ch": "VANPL_A_00001"
-                },
-                {
-                    "rp.ss": {
-                        "$gte": 15977
-                    }
-                },
-                {
-                    "rp.ss": {
-                        "$lt": 88446
-                    }
-                }
-            ]
-        }
-    },
-    {
-        "$lookup": {
-            "from": "variantRunData",
-            "let": {
-                "localId": "$_id"
-            },
-            "pipeline": [
-                {
-                    "$match": {
-                        "$expr": {
-                            "$eq": [
-                                "$_id.vi",
-                                "$$localId"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "$project": {
-                        "vals": {
-                            "$filter": {
-                                "input": [
-                                    "$sp.92.ai.DP",
-                                    "$sp.91.ai.DP",
-                                    "$sp.69.ai.DP",
-                                    "$sp.88.ai.DP",
-                                    "$sp.72.ai.DP"
-                                ],
-                                "as": "val",
-                                "cond": {
-                                    "$ne": [
-                                        "$$val",
-                                        null
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
-            ],
-            "as": "vrd"
-        }
-    },
-    {
-        "$project": {
-            "r": {
-                "$let": {
-                    "vars": {
-                        "values": {
-                            "$arrayElemAt": [
-                                "$vrd",
-                                0
-                            ]
-                        }
-                    },
-                    "in": {
-                        "DP": {
-                            "$sum": "$$values.vals"
-                        },
-                        "valCount": {
-                            "$size": "$$values.vals"
-                        }
-                    }
-                }
-            }
-        }
-    }
-])
-            			 */
-            			
+            			pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", matchList)));
+
+                        BasicDBObject projectStage = new BasicDBObject("$project", new BasicDBObject("r", new BasicDBObject("$let", new BasicDBObject()
+                        	    .append("vars", new BasicDBObject("values", new BasicDBObject("$filter", new BasicDBObject()
+                                        .append("input", Arrays.stream(sampleIDsGroupedBySortedIndividuals).flatMap(List::stream).map(spId -> "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + spId + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gvfpr.getVcfField()).toArray())
+                                        .append("as", "val")
+                                        .append("cond", new BasicDBObject("$ne", Arrays.asList("$$val", null)))
+                        	    	)))
+                        	        .append("in", new BasicDBObject()
+                        	            .append("valSum", new BasicDBObject("$sum", "$$values"))
+                        	            .append("valCount", new BasicDBObject("$size", "$$values"))
+                        	        )
+                        	    )));
+                        pipeline.add(projectStage);
+                        
+                        BasicDBObject groupStage = new BasicDBObject("$group", new BasicDBObject("_id", null)
+                        		.append("valSum", new BasicDBObject("$sum", new BasicDBObject("$toInt", "$r.valSum")))
+                        		.append("valCount", new BasicDBObject("$sum", "$r.valCount"))
+                        );
+                        pipeline.add(groupStage);
+                        
 	        			Iterator<Document> it = mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantRunData.class)).aggregate(pipeline).iterator();
-	        			result.put(rangeMin + (chunkIndex*intervalSize), it.hasNext() ? Double.valueOf(it.next().get(gvfpr.getVcfField()).toString()).intValue() / variantsInInterval.size() : 0);
+	        			if (!it.hasNext())
+	        				result.put(rangeMin + (chunkIndex*intervalSize), 0);
+	        			else {
+	        				Document resultDoc = it.next();
+	        				int totalCumulated = Double.valueOf(resultDoc.get("valSum").toString()).intValue();
+	        				result.put(rangeMin + (chunkIndex*intervalSize), totalCumulated == 0 ? 0 : (totalCumulated / Double.valueOf(resultDoc.get("valCount").toString()).intValue()));
+	        			}
 	        			finalProgress.setCurrentStepProgress((short) result.size() * 100 / gvfpr.getDisplayedRangeIntervalCount());
             		}
             	}
