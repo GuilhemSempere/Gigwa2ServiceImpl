@@ -814,6 +814,8 @@ public class VisualizationService {
     private static final String FST_RES_POPULATIONS = "ps";
 
     private List<BasicDBObject> buildFstQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+//		System.err.println("Fst : " + gdr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+		
     	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
@@ -937,12 +939,16 @@ public class VisualizationService {
     private static final String TJD_RES_TAJIMAD = "tjd";
 
     private List<BasicDBObject> buildTajimaDQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+//		System.err.println("Tajima : " + gdr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+
     	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<String> selectedIndividuals = new ArrayList<String>();
-        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+    	List<List<String>> callsetIds = gdr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.addAll(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
@@ -1071,12 +1077,16 @@ public class VisualizationService {
     }
 
     private List<BasicDBObject> buildMafQuery(GigwaDensityRequest gdr, boolean useTempColl) throws ObjectNotFoundException {
+//		System.err.println("MAF : " + gdr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+
     	String info[] = Helper.getInfoFromId(gdr.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
 
     	List<String> selectedIndividuals = new ArrayList<String>();
-        selectedIndividuals.addAll(gdr.getPlotIndividuals().size() == 0 ? MgdbDao.getProjectIndividuals(sModule, projId) : gdr.getPlotIndividuals().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+    	List<List<String>> callsetIds = gdr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.addAll(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
         TreeMap<String, List<GenotypingSample>> individualToSampleListMap = new TreeMap<String, List<GenotypingSample>>();
         individualToSampleListMap.putAll(MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals));
@@ -1176,6 +1186,8 @@ public class VisualizationService {
 
     
     public Map<Long, Integer> selectionVcfFieldPlotData(GigwaVcfFieldPlotRequest gvfpr, String token) throws Exception {
+//		System.err.println(gvfpr.getVcfField() + " : " + gvfpr.getAllCallSetIds().stream().map(t -> t.size()).toList());
+
         long before = System.currentTimeMillis();
 
         String info[] = Helper.getInfoFromId(gvfpr.getVariantSetId(), 2);
@@ -1211,13 +1223,15 @@ public class VisualizationService {
 		final long rangeMin = gvfpr.getDisplayedRangeMin();
 		final ProgressIndicator finalProgress = progress;
 
-		if (gvfpr.getPlotIndividuals() == null || gvfpr.getPlotIndividuals().size() == 0)
-			gvfpr.setPlotIndividuals(MgdbDao.getProjectIndividuals(sModule, projId));
+    	List<String> selectedIndividuals = new ArrayList<String>();
+    	List<List<String>> callsetIds = gvfpr.getAllCallSetIds();
+		for (int i = 0; i < callsetIds.size(); i++)
+			selectedIndividuals.addAll(callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
 
-        List<Integer>[] sampleIDsGroupedBySortedIndividuals = new List[gvfpr.getPlotIndividuals().size()];
-        TreeMap<String, ArrayList<GenotypingSample>> samplesByIndividual = MgdbDao.getSamplesByIndividualForProject(sModule, projId, gvfpr.getPlotIndividuals());
+        List<Integer>[] sampleIDsGroupedBySortedIndividuals = new List[selectedIndividuals.size()];
+        TreeMap<String, ArrayList<GenotypingSample>> samplesByIndividual = MgdbDao.getSamplesByIndividualForProject(sModule, projId, selectedIndividuals);
         int k = 0;
-        for (String ind : gvfpr.getPlotIndividuals()) {
+        for (String ind : selectedIndividuals) {
         	sampleIDsGroupedBySortedIndividuals[k] = samplesByIndividual.get(ind).stream().map(sp -> sp.getId()).collect(Collectors.toList());
             k++;
 		}
@@ -1245,46 +1259,42 @@ public class VisualizationService {
                 public void run() {
                     if (!finalProgress.isAborted())
                     {
-                        List<String> variantsInInterval = mongoTemplate.getCollection(usedVarCollName).distinct("_id", query.getQueryObject(), String.class).into(new ArrayList<>());
-
-                        final ArrayList<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
-
-            			BasicDBObject group = new BasicDBObject();
-            			ArrayList<Object> individualValuePaths = new ArrayList<>();
-            			for (int j=0; j<gvfpr.getPlotIndividuals().size(); j++)
-            			{
-            				List<Integer> individualSamples = sampleIDsGroupedBySortedIndividuals[j];
-            				if (individualSamples.size() == 1)
-            					individualValuePaths.add("$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSamples.get(0) + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gvfpr.getVcfField());
-            				else
-            				{	// only take into account the sample with the highest value
-            					if (group.size() == 0)
-            						group.put("_id", null);
-            					for (int l=0; l<variantsInInterval.size(); l++)
-            					{
-                					ArrayList<BasicDBObject> sampleFields = new ArrayList<>();
-	            					for (int k=0; k<individualSamples.size(); k++)
-	            					{
-	            						if (l == 0)
-	            							group.put(gvfpr.getVcfField() + individualSamples.get(k), new BasicDBObject("$addToSet", "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSamples.get(k) + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gvfpr.getVcfField()));
-	                					sampleFields.add(new BasicDBObject("$arrayElemAt", new Object[] {"$" + gvfpr.getVcfField() + individualSamples.get(k), l}));
-	            					}
-                					individualValuePaths.add(new BasicDBObject("$max", sampleFields));
-            					}
-            				}
-            			}
-            			if (group.size() > 0)
-            				pipeline.add(new BasicDBObject("$group", group));
-            			pipeline.add(new BasicDBObject("$project", new BasicDBObject(gvfpr.getVcfField(), new BasicDBObject("$sum", individualValuePaths))));
+                    	List<String> variantsInInterval = mongoTemplate.getCollection(usedVarCollName).distinct("_id", query.getQueryObject(), String.class).into(new ArrayList<>());	// oddly, it is faster to run a pre-query than to use $lookup
+	                    final ArrayList<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
 
             			BasicDBList matchList = new BasicDBList();
             			matchList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", variantsInInterval)));
             			if (nTempVarCount == 0 && !variantQueryDBList.isEmpty())
             				matchList.addAll(variantQueryDBList);
-            			pipeline.add(0, new BasicDBObject("$match", new BasicDBObject("$and", matchList)));
+            			pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", matchList)));
 
+                        BasicDBObject projectStage = new BasicDBObject("$project", new BasicDBObject("r", new BasicDBObject("$let", new BasicDBObject()
+                        	    .append("vars", new BasicDBObject("values", new BasicDBObject("$filter", new BasicDBObject()
+                                        .append("input", Arrays.stream(sampleIDsGroupedBySortedIndividuals).flatMap(List::stream).map(spId -> "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + spId + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gvfpr.getVcfField()).toArray())
+                                        .append("as", "val")
+                                        .append("cond", new BasicDBObject("$ne", Arrays.asList("$$val", null)))
+                        	    	)))
+                        	        .append("in", new BasicDBObject()
+                        	            .append("valSum", new BasicDBObject("$sum", "$$values"))
+                        	            .append("valCount", new BasicDBObject("$size", "$$values"))
+                        	        )
+                        	    )));
+                        pipeline.add(projectStage);
+                        
+                        BasicDBObject groupStage = new BasicDBObject("$group", new BasicDBObject("_id", null)
+                        		.append("valSum", new BasicDBObject("$sum", new BasicDBObject("$toInt", "$r.valSum")))
+                        		.append("valCount", new BasicDBObject("$sum", "$r.valCount"))
+                        );
+                        pipeline.add(groupStage);
+                        
 	        			Iterator<Document> it = mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantRunData.class)).aggregate(pipeline).iterator();
-	        			result.put(rangeMin + (chunkIndex*intervalSize), it.hasNext() ? Double.valueOf(it.next().get(gvfpr.getVcfField()).toString()).intValue() : 0);
+	        			if (!it.hasNext())
+	        				result.put(rangeMin + (chunkIndex*intervalSize), 0);
+	        			else {
+	        				Document resultDoc = it.next();
+	        				int totalCumulated = Double.valueOf(resultDoc.get("valSum").toString()).intValue();
+	        				result.put(rangeMin + (chunkIndex*intervalSize), totalCumulated == 0 ? 0 : (totalCumulated / Double.valueOf(resultDoc.get("valCount").toString()).intValue()));
+	        			}
 	        			finalProgress.setCurrentStepProgress((short) result.size() * 100 / gvfpr.getDisplayedRangeIntervalCount());
             		}
             	}

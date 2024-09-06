@@ -207,8 +207,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
 
         for (TreeMap<String, ArrayList<GenotypingSample>> groupIndSamples : individualToSampleListMap)
-            if (groupIndSamples != null && groupIndSamples.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent())
+            if (groupIndSamples != null && groupIndSamples.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent()) {
                 fGotMultiSampleIndividuals = true;
+                break;
+            }
 
         if (!fForCounting || fIsMultiRunProject) {
             if (!individualToSampleListMap.isEmpty()) {
@@ -409,7 +411,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             initialMatchList.addAll(variantQueryDBList);    // more efficient if added after chunking bit in this case
         
         if (fIsMultiRunProject)
-            groupFields.put("_id", "$_id." + VariantRunDataId.FIELDNAME_VARIANT_ID); // group multi-run records by variant id
+            groupFields.put("_id", "$_id." + VariantRunDataId.FIELDNAME_VARIANT_ID); // group records by variant id
 
         BasicDBObject addFieldsVars = new BasicDBObject();    // used for handling "all or mostly the same", heterozygosity and discriminate filters
         BasicDBObject addFieldsIn = new BasicDBObject();    // used for handling "all or mostly the same", heterozygosity and discriminate filters
@@ -423,94 +425,68 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 boolean fNeedGtArray = fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fZygosityRegex[g] || fHezRatioApplied[g] || fCompareBetweenGenotypes[g] || req.isDiscriminate(g); // the only case when it's not needed is when we're only filtering on gene name or effect
                 int nGroupSize = individualToSampleListMap.get(g).size();
                 
-                List<Object> currentGroupGtArray = new ArrayList<>();
+                List<Object> currentIndGroupGtArray = new ArrayList<>();
                 for (String ind : individualToSampleListMap.get(g).keySet()) {
                     BasicDBList individualSampleGenotypeList = new BasicDBList();
-                    BasicDBList conditionsWhereAnnotationFieldValueIsTooLow = new BasicDBList();
                     List<GenotypingSample> individualSamples = individualToSampleListMap.get(g).get(ind);
                     if (individualSamples != null)
                         for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
                             GenotypingSample individualSample = individualSamples.get(k);
                             Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
-                            if (fNeedGtArray && fIsMultiRunProject)
-                                groupFields.put(SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId(), new BasicDBObject("$addToSet", fullPathToGT));
-                            individualSampleGenotypeList.add("$" + SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId());
                             
+                            BasicDBList conditionsWhereAnnotationFieldValueIsTooLow = new BasicDBList();
                             if (req.getAnnotationFieldThresholds(g) != null)
                                 for (String annotation : req.getAnnotationFieldThresholds(g).keySet()) {
                                     Float threshold = req.getAnnotationFieldThresholds(g).get(annotation);
                                     if (threshold == 0)
                                         continue;
         
-                                    String pathToAnnotationField = individualSample.getId() + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + annotation;
-                                    if (fNeedGtArray && fIsMultiRunProject)
-                                        groupFields.put(pathToAnnotationField, new BasicDBObject("$addToSet", "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + pathToAnnotationField));
-                                    
-                                    BasicDBList qualTooLowList = new BasicDBList();
-                                    qualTooLowList.add(fIsMultiRunProject ? new BasicDBObject("$arrayElemAt", new Object[] {"$" + pathToAnnotationField, 0}) : ("$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + pathToAnnotationField));
-                                    qualTooLowList.add(threshold);
+                                    String pathToAnnotationField = VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + annotation;
                 
-                                    BasicDBObject qualTooLow = new BasicDBObject("$lt", qualTooLowList);
+                                    BasicDBObject qualTooLow = new BasicDBObject("$lt", Arrays.asList("$" + pathToAnnotationField, threshold));
                                     conditionsWhereAnnotationFieldValueIsTooLow.add(qualTooLow);
                                 }
-            
+                            
+                            if (fNeedGtArray && fIsMultiRunProject)
+                                groupFields.put(SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId(), new BasicDBObject("$addToSet", conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT));
+                            
+                            if (fIsMultiRunProject || fGotMultiSampleIndividuals)
+	                            individualSampleGenotypeList.add(!fIsMultiRunProject ? (conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT) : new BasicDBObject("$arrayElemAt", Arrays.asList(new BasicDBObject("$filter", new BasicDBObject("input", "$" + SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId()).append("as", "g").append("cond", new BasicDBObject("$ne", Arrays.asList("$$g", null)))), 0)));
+
                             if (k > 0)
                                 continue;    // the remaining code in this loop must only be executed once
-                            
-                            if (conditionsWhereAnnotationFieldValueIsTooLow.size() > 0)
-                                fullPathToGT = new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT});
-                            
-                            if (fNeedGtArray && !fIsMultiRunProject)
-                                currentGroupGtArray.add(fullPathToGT);
+
+                            if (fNeedGtArray) {
+                            	if (fIsMultiRunProject || fGotMultiSampleIndividuals)
+                            		currentIndGroupGtArray.add(fGotMultiSampleIndividuals ? individualSampleGenotypeList : individualSampleGenotypeList.get(0)	/* if one sample per individual we don't need an extra array ("TOUCHY" code chunk won't be executed) */);
+                            	else
+                            		currentIndGroupGtArray.add((conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT));
+                            }
                         }
-                    if (fNeedGtArray && fIsMultiRunProject) {    // we're in the case of a multi-run project
-                        BasicDBObject union = new BasicDBObject("input", new BasicDBObject("$setUnion", individualSampleGenotypeList));
-                        union.put("as", "gt");
-                        union.put("cond", new BasicDBObject("$ne", Arrays.asList("$$gt", null)));
-                        BasicDBObject filteredGenotypeUnion = new BasicDBObject("$filter", union);    // union of (non-missing) genotypes for a given multi-sample individual
-        
-                        currentGroupGtArray.add(conditionsWhereAnnotationFieldValueIsTooLow.size() == 0 ? filteredGenotypeUnion : new BasicDBObject("$cond", new Object[] { new BasicDBObject("$and", conditionsWhereAnnotationFieldValueIsTooLow), new Object[0], filteredGenotypeUnion}));
-                    }
                 }
-    
+                
                 if (fMafApplied[g]) {    // number of alternate alleles in selected population
-                    BasicDBObject inObj;
-                    if (fIsMultiRunProject) {
-                        BasicDBList condList = new BasicDBList();
-                        BasicDBObject addObject = new BasicDBObject("$add", Arrays.asList(1, new BasicDBObject("$cmp", Arrays.asList(new BasicDBObject("$arrayElemAt", Arrays.asList("$$g", 0)), genotypingProject.getPloidyLevel() == 1 ? "1" : "0/1"))));
-                        if (!fGotMultiSampleIndividuals)
-                            inObj = addObject;    // no need to make sure all genotypes for each individual are equal because there's only one sample per individual 
-                        else {
-                            condList.add(new BasicDBObject("$eq", new Object[] {new BasicDBObject("$size", "$$g"), 1})); // if we have several distinct genotypes for this individual then we treat it as missing data (no alt allele to take into account)
-                            condList.add(addObject);
-                            condList.add(0);
-                            inObj = new BasicDBObject("$cond", condList);
-                        }
-                    }
-                    else
-                        inObj = new BasicDBObject("$add", Arrays.asList(1, new BasicDBObject("$cmp", Arrays.asList("$$g", genotypingProject.getPloidyLevel() == 1 ? "1" : "0/1"))));
+                    BasicDBObject inObj = new BasicDBObject("$add", Arrays.asList(1, new BasicDBObject("$cmp", Arrays.asList("$$g", genotypingProject.getPloidyLevel() == 1 ? "1" : "0/1"))));
                     in.put("a" + g, new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", inObj))));
                 }
     
                 if (fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fHezRatioApplied[g] || (cleanOperator[g] != null && !fZygosityRegex[g]) || req.isDiscriminate(g)) { //  number of missing genotypes in selected population
-                    if (fIsMultiRunProject)
-                        in.put("m" + g, new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$abs", new BasicDBObject("$cmp", new Object[] {new BasicDBObject("$size", "$$g"), 1}))))));
-                    else// if (existingGenotypeCountList.size() > 0)
-                        in.put("m" + g, new BasicDBObject("$subtract", Arrays.asList(nGroupSize, new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$max", Arrays.asList(0, new BasicDBObject("$cmp", Arrays.asList("$$g", null))))))))));
+                    in.put("m" + g, new BasicDBObject("$subtract", Arrays.asList(nGroupSize, new BasicDBObject("$sum", new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$max", Arrays.asList(0, new BasicDBObject("$cmp", Arrays.asList("$$g", null))))))))));
                 }
     
                 if (fCompareBetweenGenotypes[g] && !fMostSameSelected) {
                     BasicDBObject filter = new BasicDBObject("input", new BasicDBObject("$setUnion", "$$gt" + g));
                     filter.put("as", "gt");
-                    filter.put("cond", fIsMultiRunProject ? new BasicDBObject("$eq", Arrays.asList(new BasicDBObject("$size", "$$gt"), 1)) : new BasicDBObject("$ne", Arrays.asList("$$gt", null)));
+                    filter.put("cond", new BasicDBObject("$ne", Arrays.asList("$$gt", null)));
                     in.put("dc" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter)));
                 }
     
-                if (fZygosityRegex[g]|| fMostSameSelected || req.isDiscriminate(g)) {    //  distinct non-missing genotypes in selected population (zygosity comparison)
-                    if (fMostSameSelected || req.isDiscriminate(g))
+                if (fZygosityRegex[g] || fMostSameSelected || req.isDiscriminate(g)) {    //  distinct non-missing genotypes in selected population (zygosity comparison)
+                    if (fMostSameSelected || req.isDiscriminate(g)) {
                         in.put("gt" + g, "$$gt" + g);    //  complete list of genotypes in selected population (all same)
+                    }
     
-                    BasicDBObject filter = new BasicDBObject("input", new BasicDBObject("$setUnion", !fIsMultiRunProject ? "$$gt" + g : new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$arrayElemAt", Arrays.asList("$$g", 0))))));
+                    BasicDBObject filter = new BasicDBObject("input", new BasicDBObject("$setUnion", "$$gt" + g));
                     filter.put("as", "gt");
                     filter.put("cond", new BasicDBObject("$ne", Arrays.asList("$$gt", null)));
                     in.put("d" + g, new BasicDBObject("$filter", filter));
@@ -526,7 +502,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 }
     
                 if (fHezRatioApplied[g]) {    // heterozygosity ratio
-                    BasicDBObject filter = new BasicDBObject("input", !fIsMultiRunProject ? "$$gt" + g : new BasicDBObject("$map", new BasicDBObject("input", "$$gt" + g).append("as", "g").append("in", new BasicDBObject("$arrayElemAt", Arrays.asList("$$g", 0)))));
+                    BasicDBObject filter = new BasicDBObject("input", "$$gt" + g);
                     filter.put("as", "gt");
                     filter.put("cond", new BasicDBObject("$and", Arrays.asList(new BasicDBObject("$ne", Arrays.asList("$$gt", null)), new BasicDBObject("$not", new BasicDBObject("$regexMatch", new BasicDBObject("input", "$$gt").append("regex", "^([0-9]+)(\\/\\1)*$"))))));
                     in.put("he" + g, new BasicDBObject("$size", new BasicDBObject("$filter", filter))); // heterozygous genotype count
@@ -627,7 +603,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         if (fMostSameSelected || req.isDiscriminate(g)) {
                             BasicDBObject filter = new BasicDBObject("input", "$$gt" + g);
                             filter.put("as", "g");
-                            filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$g", fIsMultiRunProject ? Arrays.asList("$$d") : "$$d")));
+                            filter.put("cond", new BasicDBObject("$eq", Arrays.asList("$$g", "$$d")));
                             subIn.put("c" + g, new BasicDBObject("$map", new BasicDBObject("input", "$$d" + g).append("as", "d").append("in", new BasicDBObject("$size", new BasicDBObject("$filter", filter)))));
                             
                             addFieldsVars.put("dgc" + g, new BasicDBObject("$max", "$" + MAIN_RESULT_PROJECTION_FIELD + ".c" + g));    // dominant genotype count
@@ -664,7 +640,42 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     addFieldsIn.put("hef" + g, new BasicDBObject("$cond", condList)); // heterozygous frequency
                 }
     
-                vars.put("gt" + g, currentGroupGtArray);
+                if (fNeedGtArray && fGotMultiSampleIndividuals) {	// TOUCHY: this chunk of code gets inserted when working with multi-sample individuals; it turns the data into the same format as in the simple case (one sample per individual),
+                													// following these rules: kept genotype is the most frequently found one (ignoring missing data), and null if only missing data found or no most frequent one found (several ex-aequo) 
+                	vars.put("gt" + g, new BasicDBObject("$let", new BasicDBObject("vars", new BasicDBObject("igl" /* individual genotype list */ , currentIndGroupGtArray))
+                		    .append("in", new BasicDBObject("$map", new BasicDBObject("input", "$$igl")
+                		            .append("as", "ig" /* individual genotypes */)
+                		            .append("in", new BasicDBObject("$let", new BasicDBObject("vars", new BasicDBObject("ca" /* counts array */,
+                		                new BasicDBObject("$map", new BasicDBObject("input", new BasicDBObject("$setUnion", Arrays.asList("$$ig")))
+                		                    .append("as", "it")
+                		                    .append("in", new BasicDBObject("k", "$$it")
+                		                        .append("v", new BasicDBObject("$size", new BasicDBObject("$filter",
+                		                            new BasicDBObject("input", "$$ig")
+                		                                .append("as", "el")
+                		                                .append("cond", new BasicDBObject("$and", Arrays.asList(
+                		                                    new BasicDBObject("$ne", Arrays.asList("$$el", null)),
+                		                                    new BasicDBObject("$eq", Arrays.asList("$$el", "$$it"))
+                		                                ))))))))))
+                		                .append("in", new BasicDBObject("$cond", Arrays.asList(
+                		                    new BasicDBObject("$eq", Arrays.asList(new BasicDBObject("$size", "$$ig"), 0)), 
+                		                    null,
+                		                    new BasicDBObject("$let", new BasicDBObject("vars", new BasicDBObject("mci" /* max count items */,
+                		                        new BasicDBObject("$filter", new BasicDBObject("input", "$$ca")
+                		                            .append("as", "c")
+                		                            .append("cond", new BasicDBObject("$eq", Arrays.asList("$$c.v", new BasicDBObject("$max", "$$ca.v")))))))
+                		                        .append("in", new BasicDBObject("$cond", Arrays.asList(
+                		                            new BasicDBObject("$gt", Arrays.asList(new BasicDBObject("$size", "$$mci"), 1)), 
+                		                            null,
+                		                            new BasicDBObject("$arrayElemAt", Arrays.asList("$$mci.k", 0))
+                		                        )))
+                		                    )
+                		                ))
+                		            )
+                		        )
+                		    )))));
+                }
+                else
+                	vars.put("gt" + g, currentIndGroupGtArray);
             }
         
         if (subIn.size() > 0) { // insert additional $let
@@ -680,11 +691,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             projectionFields.put(MAIN_RESULT_PROJECTION_FIELD, new BasicDBObject("$let", let));
         }
 
-        if (fIsMultiRunProject && !annotationMatchList.isEmpty())
-            groupFields.put(VariantRunData.SECTION_ADDITIONAL_INFO, new BasicDBObject("$addToSet", "$" + VariantRunData.SECTION_ADDITIONAL_INFO));
-            
-        if (fIsMultiRunProject)
+        if (fIsMultiRunProject) {
             pipeline.add(new BasicDBObject("$group", groupFields));
+            if (!annotationMatchList.isEmpty())
+                groupFields.put(VariantRunData.SECTION_ADDITIONAL_INFO, new BasicDBObject("$addToSet", "$" + VariantRunData.SECTION_ADDITIONAL_INFO));
+        }
         else if (!fForCounting)
             projectionFields.put("_id", "$_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
         
