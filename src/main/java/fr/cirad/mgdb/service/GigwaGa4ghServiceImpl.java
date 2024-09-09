@@ -45,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeMap;
@@ -193,12 +194,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     /**
      * The Constant EXPORT_EXPIRATION_DELAY_MILLIS.
      */
-    static final private long EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 60 * 24 * 2; /* 2 days */
+    static final private long EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 6/*0 * 24 * 2*/; /* 2 days */
+    static final private long DDL_EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60/* * 60*/ ; /* 1 hour */
 
     /**
      * The Constant TMP_OUTPUT_FOLDER.
      */
     static public final String TMP_OUTPUT_FOLDER = "tmpOutput";
+    static public final String TMP_OUTPUT_DDL_SUBFOLDER = "ddl_tmpOutput";
 
     /**
      * The Constant FRONTEND_URL.
@@ -1064,8 +1067,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String filename = sModule + "__project" + projId + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat() + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
 
             LOG.info((gsver.isKeepExportOnServer() ? "On-server" : "Direct-download") + " export requested: " + processId);
-            if (gsver.isKeepExportOnServer()) {
-                String relativeOutputFolder = FRONTEND_URL + File.separator + TMP_OUTPUT_FOLDER + File.separator + username + File.separator + Helper.convertToMD5(processId) + File.separator;
+//            if (gsver.isKeepExportOnServer()) {
+                String relativeOutputFolder = FRONTEND_URL + File.separator + (!gsver.isKeepExportOnServer() ? TMP_OUTPUT_DDL_SUBFOLDER : TMP_OUTPUT_FOLDER) + File.separator + username + File.separator + Helper.convertToMD5(processId) + File.separator;
                 File outputLocation = new File(gsver.getRequest().getSession().getServletContext().getRealPath(File.separator + relativeOutputFolder));
                 if (!outputLocation.exists() && !outputLocation.mkdirs()) {
                     throw new Exception("Unable to create folder: " + outputLocation);
@@ -1073,14 +1076,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 os = new FileOutputStream(new File(outputLocation.getAbsolutePath() + File.separator + filename));
                 response.setContentType("text/plain");
                 String exportURL = gsver.getRequest().getContextPath() + "/" + relativeOutputFolder.replace(File.separator, "/") + filename;
-                LOG.debug("On-server export file for export " + processId + ": " + exportURL);
+                LOG.debug("Export file for process " + processId + ": " + exportURL);
                 response.getWriter().write(exportURL);
                 response.flushBuffer();
-            } else {
-                os = response.getOutputStream();
-                response.setContentType("application/zip");
-                response.setHeader("Content-disposition", "inline; filename=" + filename);
-            }
+//            } else {
+//                os = response.getOutputStream();
+//                response.setContentType("application/zip");
+//                response.setHeader("Content-disposition", "inline; filename=" + filename);
+//            }
 
             GenotypingProject project = mongoTemplate.findById(projId, GenotypingProject.class);
             Map<String, InputStream> readyToExportFiles = new HashMap<>();
@@ -1130,16 +1133,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                         }
                     };
-                    if (gsver.isKeepExportOnServer())
+//                    if (gsver.isKeepExportOnServer())
                         exportThread.start();
-                    else
-                    {
-                        String contentType = individualOrientedExportHandler.getExportContentType();
-                        if (contentType != null && contentType.trim().length() > 0)
-                            response.setContentType(contentType);
-
-                        exportThread.run();
-                    }
+//                    else
+//                    {
+//                        String contentType = individualOrientedExportHandler.getExportContentType();
+//                        if (contentType != null && contentType.trim().length() > 0)
+//                            response.setContentType(contentType);
+//
+//                        exportThread.run();
+//                    }
                 }
             }
             else if (markerOrientedExportHandler != null)
@@ -1177,10 +1180,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         }
                     }
                 };
-                if (gsver.isKeepExportOnServer())
+//                if (gsver.isKeepExportOnServer())
                     exportThread.start();
-                else
-                    exportThread.run();
+//                else
+//                    exportThread.run();
             }
             else
                 throw new Exception("No export handler found for format " + gsver.getExportFormat());
@@ -1239,13 +1242,21 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         if (request.getSession() == null) {
             return;    // working around some random bug
         }
+
+        Map<String, Long> folderToDelayMap = new LinkedHashMap<>() {{
+        	put(TMP_OUTPUT_DDL_SUBFOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
+        	put(TMP_OUTPUT_FOLDER, EXPORT_EXPIRATION_DELAY_MILLIS);
+        }};
+        
         long nowMillis = new Date().getTime();
-        File filterOutputLocation = new File(request.getSession().getServletContext().getRealPath(FRONTEND_URL + File.separator + TMP_OUTPUT_FOLDER));
-        if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
-            for (File f : filterOutputLocation.listFiles()) {
-                if (f.isDirectory() && nowMillis - f.lastModified() > EXPORT_EXPIRATION_DELAY_MILLIS) {
-                    FileUtils.deleteDirectory(f);    // it is an expired job-output-folder
-                    LOG.info("Temporary folder was deleted: " + f.getPath());
+        for (Entry<String, Long> entry : folderToDelayMap.entrySet()) {
+            File filterOutputLocation = new File(request.getSession().getServletContext().getRealPath(FRONTEND_URL + File.separator + entry.getKey()));
+            if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
+                for (File f : filterOutputLocation.listFiles()) {
+                    if (f.isDirectory() && nowMillis - f.lastModified() > entry.getValue()) {
+                        FileUtils.deleteDirectory(f);    // it is an expired job-output-folder
+                        LOG.info("Temporary folder was deleted: " + f.getPath());
+                    }
                 }
             }
         }
