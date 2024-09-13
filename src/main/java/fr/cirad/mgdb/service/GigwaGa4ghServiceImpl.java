@@ -519,7 +519,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         long totalCount = mongoTemplate.count(new Query(), VariantData.class), preFilterCount = varColl.countDocuments(new BasicDBObject("$and", variantQueryDBList));
                         fPreFilterOnVarColl = preFilterCount <= totalCount*(fMongoOnSameServer ? .85 : .45);    // only pre-filter if less than a given portion of the total variants are to be retained
                         if (fPreFilterOnVarColl)
-                                LOG.debug("Pre-filtering data on variant collection");
+                        	LOG.debug("Pre-filtering data on variant collection");
                     }
                 }
 
@@ -536,7 +536,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
 
                     int i = -1;
-                    final boolean finalPreFilterOnVarColl = fPreFilterOnVarColl;
                     String taskGroup = "count_" + System.currentTimeMillis() + "_" + token;
 //                    Long b4 = System.currentTimeMillis();
 
@@ -785,7 +784,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
 		                final HashMap<Integer, BasicDBList> rangesToCount = partialCountArrayToFill != null ? new HashMap<>() : null;
                         String taskGroup = "find_" + System.currentTimeMillis() + "_" + token;
-                        final boolean finalPreFilterOnVarColl = fPreFilterOnVarColl;
 //                        Long b4 = System.currentTimeMillis();
                         
                         ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
