@@ -63,13 +63,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.ejb.ObjectNotFoundException;
+import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import org.apache.avro.AvroRemoteException;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.log4j.Logger;
@@ -109,6 +109,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
+import org.springframework.util.FileSystemUtils;
 
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
@@ -122,6 +123,7 @@ import com.mongodb.client.model.Aggregates;
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
 import fr.cirad.mgdb.exporting.markeroriented.AbstractMarkerOrientedExportHandler;
+import fr.cirad.mgdb.exporting.tools.ExportManager.ExportOutputs;
 import fr.cirad.mgdb.importing.SequenceImport;
 import fr.cirad.mgdb.importing.VcfImport;
 import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
@@ -194,8 +196,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     /**
      * The Constant EXPORT_EXPIRATION_DELAY_MILLIS.
      */
-    static final private long EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 6/*0 * 24 * 2*/; /* 2 days */
-    static final private long DDL_EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60/* * 60*/ ; /* 1 hour */
+    static final private long EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 60 * 24 * 2; /* 2 days */
+    static final private long DDL_EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 60 ; /* 1 hour */
 
     /**
      * The Constant TMP_OUTPUT_FOLDER.
@@ -978,7 +980,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         new Thread() { public void run() {
                 try {
-                    cleanupExpiredExportData(gsver.getRequest());
+                    cleanupExpiredExportData(gsver.getRequest().getSession().getServletContext());
                 } catch (IOException e) {
                     LOG.error("Unable to cleanup expired export files", e);
                 }
@@ -1104,14 +1106,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         public void run() {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
-                                progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
-                                progress.moveToNextStep();    // done with identifying variants
-                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList(), count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
+                                ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList(), count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
                                 progress.moveToNextStep();
-                                individualOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportFiles, true, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, gsver.getMetadataFields(), IExportHandler.getIndividualPopulations(individualsByPop, true), readyToExportFiles);
+                                individualOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportOutputs, true, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, gsver.getMetadataFields(), IExportHandler.getIndividualPopulations(individualsByPop, true), readyToExportFiles);
                                 if (!progress.isAborted()) {
                                     LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                     progress.markAsComplete();
@@ -1236,10 +1236,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public void cleanupExpiredExportData(HttpServletRequest request) throws IOException {
-        if (request.getSession() == null) {
-            return;    // working around some random bug
-        }
+    public void cleanupExpiredExportData(ServletContext sc) throws IOException {
+//        if (request.getSession() == null) {
+//            return;    // working around some random bug
+//        }
 
         Map<String, Long> folderToDelayMap = new LinkedHashMap<>() {{
         	put(TMP_OUTPUT_DDL_SUBFOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
@@ -1248,11 +1248,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         
         long nowMillis = new Date().getTime();
         for (Entry<String, Long> entry : folderToDelayMap.entrySet()) {
-            File filterOutputLocation = new File(request.getSession().getServletContext().getRealPath(FRONTEND_URL + File.separator + entry.getKey()));
+            File filterOutputLocation = new File(sc.getRealPath(FRONTEND_URL + File.separator + entry.getKey()));
             if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
                 for (File f : filterOutputLocation.listFiles()) {
                     if (f.isDirectory() && nowMillis - f.lastModified() > entry.getValue()) {
-                        FileUtils.deleteDirectory(f);    // it is an expired job-output-folder
+                    	FileSystemUtils.deleteRecursively(f);    // it is an expired job-output-folder
                         LOG.info("Temporary folder was deleted: " + f.getPath());
                     }
                 }
