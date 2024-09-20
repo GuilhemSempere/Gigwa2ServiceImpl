@@ -110,6 +110,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 import org.springframework.util.FileSystemUtils;
+import org.springframework.web.context.ServletContextAware;
 
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
@@ -181,7 +182,7 @@ import htsjdk.variant.vcf.VCFSimpleHeaderLine;
  * @author adrien petel, guilhem sempere
  */
 @Component
-public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, ReferenceMethods {
+public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, ReferenceMethods, ServletContextAware {
 
     /**
      * logger
@@ -203,14 +204,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * The Constant TMP_OUTPUT_FOLDER.
      */
     static public final String TMP_OUTPUT_FOLDER = "tmpOutput";
-    static public final String TMP_OUTPUT_DDL_SUBFOLDER = "ddl_tmpOutput";
-
+    static public final String TMP_OUTPUT_DDL_FOLDER = "ddl_tmpOutput";
+	static public final String TMP_OUTPUT_EXTRACTION_FOLDER = "extraction";
+	
     /**
      * The Constant FRONTEND_URL.
      */
     static final public String FRONTEND_URL = "genofilt";
 
     static final protected HashMap<String, String> annotationField = new HashMap<>();
+
 
     private Boolean fAllowDiskUse = null;
 
@@ -221,6 +224,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     private HashSet<String> hostsNotSupportingMergeOperator = new HashSet<>();
 
     @Autowired private MgdbDao mgdbDao;
+
+	private ServletContext servletContext;
 
     /**
      * number format instance
@@ -978,14 +983,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final ProgressIndicator progress = new ProgressIndicator(processId, new String[0]);
         ProgressIndicator.registerProgressIndicator(progress);
 
-        new Thread() { public void run() {
-                try {
-                    cleanupExpiredExportData(gsver.getRequest().getSession().getServletContext());
-                } catch (IOException e) {
-                    LOG.error("Unable to cleanup expired export files", e);
-                }
-            }
-        }.start();
+//        new Thread() { public void run() {
+//                try {
+//                    cleanupExpiredExportData(gsver.getRequest().servletContext);
+//                } catch (IOException e) {
+//                    LOG.error("Unable to cleanup expired export files", e);
+//                }
+//            }
+//        }.start();
 
         String info[] = Helper.getInfoFromId(gsver.getVariantSetId(), 2);
         String sModule = info[0];
@@ -1067,23 +1072,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String filename = sModule + "__project" + projId + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat() + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
 
             LOG.info((gsver.isKeepExportOnServer() ? "On-server" : "Direct-download") + " export requested: " + processId);
-//            if (gsver.isKeepExportOnServer()) {
-                String relativeOutputFolder = FRONTEND_URL + File.separator + (!gsver.isKeepExportOnServer() ? TMP_OUTPUT_DDL_SUBFOLDER : TMP_OUTPUT_FOLDER) + File.separator + username + File.separator + Helper.convertToMD5(processId) + File.separator;
-                File outputLocation = new File(gsver.getRequest().getSession().getServletContext().getRealPath(File.separator + relativeOutputFolder));
-                if (!outputLocation.exists() && !outputLocation.mkdirs()) {
-                    throw new Exception("Unable to create folder: " + outputLocation);
-                }
-                os = new FileOutputStream(new File(outputLocation.getAbsolutePath() + File.separator + filename));
-                response.setContentType("text/plain");
-                String exportURL = gsver.getRequest().getContextPath() + "/" + relativeOutputFolder.replace(File.separator, "/") + filename;
-                LOG.debug("Export file for process " + processId + ": " + exportURL);
-                response.getWriter().write(exportURL);
-                response.flushBuffer();
-//            } else {
-//                os = response.getOutputStream();
-//                response.setContentType("application/zip");
-//                response.setHeader("Content-disposition", "inline; filename=" + filename);
-//            }
+
+            String relativeOutputFolder = FRONTEND_URL + File.separator + (!gsver.isKeepExportOnServer() ? TMP_OUTPUT_DDL_FOLDER : TMP_OUTPUT_FOLDER) + File.separator + username + File.separator + Helper.convertToMD5(processId) + File.separator;
+            File outputLocation = new File(servletContext.getRealPath(File.separator + relativeOutputFolder));
+            if (!outputLocation.exists() && !outputLocation.mkdirs()) {
+                throw new Exception("Unable to create folder: " + outputLocation);
+            }
+            os = new FileOutputStream(new File(outputLocation.getAbsolutePath() + File.separator + filename));
+            response.setContentType("text/plain");
+            String exportURL = gsver.getRequest().getContextPath() + "/" + relativeOutputFolder.replace(File.separator, "/") + filename;
+            LOG.debug("Export file for process " + processId + ": " + exportURL);
+            response.getWriter().write(exportURL);
+            response.flushBuffer();
 
             GenotypingProject project = mongoTemplate.findById(projId, GenotypingProject.class);
             Map<String, InputStream> readyToExportFiles = new HashMap<>();
@@ -1195,7 +1195,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Override
     public int getSequenceFilterCount(HttpServletRequest request, String sModule) throws IOException {
         int result = -1;
-        File sequenceListFile = new File(request.getSession().getServletContext().getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
+        File sequenceListFile = new File(servletContext.getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
         if (sequenceListFile.exists() && sequenceListFile.length() > 0) {
             try (LineNumberReader lineNumberReader = new LineNumberReader(new FileReader(sequenceListFile))) {
                 lineNumberReader.skip(Long.MAX_VALUE);
@@ -1229,33 +1229,56 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public void clearSequenceFilterFile(HttpServletRequest request, String sModule) {
-        File selectionFile = new File(request.getSession().getServletContext().getRealPath(SEQLIST_FOLDER) + File.separator + request.getSession().getId() + "_" + sModule);
+        File selectionFile = new File(servletContext.getRealPath(SEQLIST_FOLDER) + File.separator + request.getSession().getId() + "_" + sModule);
         if (selectionFile.exists()) {
             selectionFile.delete();
         }
     }
 
-    @Override
-    public void cleanupExpiredExportData(ServletContext sc) throws IOException {
-//        if (request.getSession() == null) {
-//            return;    // working around some random bug
-//        }
-
+    static public void cleanupExpiredExportData(ServletContext sc) throws IOException {
         Map<String, Long> folderToDelayMap = new LinkedHashMap<>() {{
-        	put(TMP_OUTPUT_DDL_SUBFOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
+        	put(TMP_OUTPUT_DDL_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
         	put(TMP_OUTPUT_FOLDER, EXPORT_EXPIRATION_DELAY_MILLIS);
+        	put(TMP_OUTPUT_EXTRACTION_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
         }};
         
         long nowMillis = new Date().getTime();
         for (Entry<String, Long> entry : folderToDelayMap.entrySet()) {
             File filterOutputLocation = new File(sc.getRealPath(FRONTEND_URL + File.separator + entry.getKey()));
             if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
-                for (File f : filterOutputLocation.listFiles()) {
-                    if (f.isDirectory() && nowMillis - f.lastModified() > entry.getValue()) {
-                    	FileSystemUtils.deleteRecursively(f);    // it is an expired job-output-folder
-                        LOG.info("Temporary folder was deleted: " + f.getPath());
-                    }
-                }
+            	for (File userFolder : filterOutputLocation.listFiles())
+            		if (userFolder.isDirectory()) {
+                    	for (File processFolder : userFolder.listFiles())
+                    		if (processFolder.isDirectory()) {
+                    			if (nowMillis - processFolder.lastModified() > entry.getValue()) {
+                					FileSystemUtils.deleteRecursively(processFolder);
+//                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
+                    			}
+                    			else {
+	                    			for (File exportFileOrFolder : processFolder.listFiles()) {
+	                    				if (nowMillis - exportFileOrFolder.lastModified() > entry.getValue()) {
+		                    				if (exportFileOrFolder.isDirectory()) {
+		                    					FileSystemUtils.deleteRecursively(exportFileOrFolder);
+//		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
+		                    				}
+		                    				else {
+		                    					exportFileOrFolder.delete();
+//		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
+		                    				}
+	                    				}
+	                    			}
+	                    			if (processFolder.listFiles().length == 0) {
+	                					FileSystemUtils.deleteRecursively(processFolder);
+//	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
+	                    			}
+                    			}
+                    		}
+
+            			if (userFolder.listFiles().length == 0) {
+        					FileSystemUtils.deleteRecursively(userFolder);
+//        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
+            			}
+            		}
             }
         }
     }
@@ -1295,7 +1318,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public String getSequenceFilterQueryKey(HttpServletRequest request, String sModule) throws IOException {
 
         String qk = null;
-        File sequenceListFile = new File(request.getSession().getServletContext().getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
+        File sequenceListFile = new File(servletContext.getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
         if (sequenceListFile.exists() && sequenceListFile.length() > 0) {
             try (LineNumberReader lineNumberReader = new LineNumberReader(new FileReader(sequenceListFile))) {
                 qk = lineNumberReader.readLine();
@@ -2857,6 +2880,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                info.put("supportedPloidyLevels", StringUtils.join(ArrayUtils.toObject(exportHandler.getSupportedPloidyLevels()), ";"));
 	                info.put("dataFileExtensions", StringUtils.join(exportHandler.getExportDataFileExtensions(), ";"));
 	                info.put("supportedVariantTypes", StringUtils.join(exportHandler.getSupportedVariantTypes(), ";"));
+	                exportHandler.setTmpFolder(servletContext.getRealPath(FRONTEND_URL + File.separator + TMP_OUTPUT_EXTRACTION_FOLDER));
 	                exportFormats.put(exportHandler.getExportFormatName(), info);
 	            }
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException ex) {
@@ -2956,4 +2980,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         LOG.info("searchGenesLookup found " + values.size() + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
         return values;
     }
+
+	@Override
+	public void setServletContext(ServletContext servletContext) {
+		this.servletContext = servletContext;
+	}
 }
