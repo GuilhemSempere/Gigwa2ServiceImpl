@@ -45,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeMap;
@@ -62,13 +63,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.ejb.ObjectNotFoundException;
+import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import org.apache.avro.AvroRemoteException;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.log4j.Logger;
@@ -108,6 +109,8 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
+import org.springframework.util.FileSystemUtils;
+import org.springframework.web.context.ServletContextAware;
 
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
@@ -121,6 +124,7 @@ import com.mongodb.client.model.Aggregates;
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
 import fr.cirad.mgdb.exporting.markeroriented.AbstractMarkerOrientedExportHandler;
+import fr.cirad.mgdb.exporting.tools.ExportManager.ExportOutputs;
 import fr.cirad.mgdb.importing.SequenceImport;
 import fr.cirad.mgdb.importing.VcfImport;
 import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
@@ -178,7 +182,7 @@ import htsjdk.variant.vcf.VCFSimpleHeaderLine;
  * @author adrien petel, guilhem sempere
  */
 @Component
-public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, ReferenceMethods {
+public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, ReferenceMethods, ServletContextAware {
 
     /**
      * logger
@@ -194,18 +198,22 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * The Constant EXPORT_EXPIRATION_DELAY_MILLIS.
      */
     static final private long EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 60 * 24 * 2; /* 2 days */
+    static final private long DDL_EXPORT_EXPIRATION_DELAY_MILLIS = 1000 * 60 * 60 ; /* 1 hour */
 
     /**
      * The Constant TMP_OUTPUT_FOLDER.
      */
     static public final String TMP_OUTPUT_FOLDER = "tmpOutput";
-
+    static public final String TMP_OUTPUT_DDL_FOLDER = "ddl_tmpOutput";
+	static public final String TMP_OUTPUT_EXTRACTION_FOLDER = "extraction";
+	
     /**
      * The Constant FRONTEND_URL.
      */
     static final public String FRONTEND_URL = "genofilt";
 
     static final protected HashMap<String, String> annotationField = new HashMap<>();
+
 
     private Boolean fAllowDiskUse = null;
 
@@ -216,6 +224,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     private HashSet<String> hostsNotSupportingMergeOperator = new HashSet<>();
 
     @Autowired private MgdbDao mgdbDao;
+
+	private ServletContext servletContext;
 
     /**
      * number format instance
@@ -516,7 +526,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         long totalCount = mongoTemplate.count(new Query(), VariantData.class), preFilterCount = varColl.countDocuments(new BasicDBObject("$and", variantQueryDBList));
                         fPreFilterOnVarColl = preFilterCount <= totalCount*(fMongoOnSameServer ? .85 : .45);    // only pre-filter if less than a given portion of the total variants are to be retained
                         if (fPreFilterOnVarColl)
-                                LOG.debug("Pre-filtering data on variant collection");
+                        	LOG.debug("Pre-filtering data on variant collection");
                     }
                 }
 
@@ -533,7 +543,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     final AtomicInteger finishedThreadCount = new AtomicInteger(0);
 
                     int i = -1;
-                    final boolean finalPreFilterOnVarColl = fPreFilterOnVarColl;
                     String taskGroup = "count_" + System.currentTimeMillis() + "_" + token;
 //                    Long b4 = System.currentTimeMillis();
 
@@ -782,7 +791,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
 		                final HashMap<Integer, BasicDBList> rangesToCount = partialCountArrayToFill != null ? new HashMap<>() : null;
                         String taskGroup = "find_" + System.currentTimeMillis() + "_" + token;
-                        final boolean finalPreFilterOnVarColl = fPreFilterOnVarColl;
 //                        Long b4 = System.currentTimeMillis();
                         
                         ExecutorService executor = MongoTemplateManager.getExecutor(sModule);
@@ -975,14 +983,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final ProgressIndicator progress = new ProgressIndicator(processId, new String[0]);
         ProgressIndicator.registerProgressIndicator(progress);
 
-        new Thread() { public void run() {
-                try {
-                    cleanupExpiredExportData(gsver.getRequest());
-                } catch (IOException e) {
-                    LOG.error("Unable to cleanup expired export files", e);
-                }
-            }
-        }.start();
+//        new Thread() { public void run() {
+//                try {
+//                    cleanupExpiredExportData(gsver.getRequest().servletContext);
+//                } catch (IOException e) {
+//                    LOG.error("Unable to cleanup expired export files", e);
+//                }
+//            }
+//        }.start();
 
         String info[] = Helper.getInfoFromId(gsver.getVariantSetId(), 2);
         String sModule = info[0];
@@ -1014,8 +1022,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gsver, getSequenceIDsBeingFilteredOn(gsver.getRequest().getSession(), sModule), true);
         Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
         final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
-        Collection<BasicDBList> variantRunDataQueries = varQueryWrapper.getVariantRunDataQueries();
-        
+
         Document variantQuery = nTempVarCount == 0 && !variantDataQueries.isEmpty() ? new Document("$and", variantQueryDBList) : new Document();
         String usedVarCollName = nTempVarCount == 0 ? mongoTemplate.getCollectionName(VariantData.class) : tmpVarColl.getNamespace().getCollectionName();
 
@@ -1064,23 +1071,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String filename = sModule + "__project" + projId + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat() + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
 
             LOG.info((gsver.isKeepExportOnServer() ? "On-server" : "Direct-download") + " export requested: " + processId);
-            if (gsver.isKeepExportOnServer()) {
-                String relativeOutputFolder = FRONTEND_URL + File.separator + TMP_OUTPUT_FOLDER + File.separator + username + File.separator + Helper.convertToMD5(processId) + File.separator;
-                File outputLocation = new File(gsver.getRequest().getSession().getServletContext().getRealPath(File.separator + relativeOutputFolder));
-                if (!outputLocation.exists() && !outputLocation.mkdirs()) {
-                    throw new Exception("Unable to create folder: " + outputLocation);
-                }
-                os = new FileOutputStream(new File(outputLocation.getAbsolutePath() + File.separator + filename));
-                response.setContentType("text/plain");
-                String exportURL = gsver.getRequest().getContextPath() + "/" + relativeOutputFolder.replace(File.separator, "/") + filename;
-                LOG.debug("On-server export file for export " + processId + ": " + exportURL);
-                response.getWriter().write(exportURL);
-                response.flushBuffer();
-            } else {
-                os = response.getOutputStream();
-                response.setContentType("application/zip");
-                response.setHeader("Content-disposition", "inline; filename=" + filename);
+
+            String relativeOutputFolder = FRONTEND_URL + File.separator + (!gsver.isKeepExportOnServer() ? TMP_OUTPUT_DDL_FOLDER : TMP_OUTPUT_FOLDER) + File.separator + username + File.separator + Helper.convertToMD5(processId) + File.separator;
+            File outputLocation = new File(servletContext.getRealPath(File.separator + relativeOutputFolder));
+            if (!outputLocation.exists() && !outputLocation.mkdirs()) {
+                throw new Exception("Unable to create folder: " + outputLocation);
             }
+            os = new FileOutputStream(new File(outputLocation.getAbsolutePath() + File.separator + filename));
+            response.setContentType("text/plain");
+            String exportURL = gsver.getRequest().getContextPath() + "/" + relativeOutputFolder.replace(File.separator, "/") + filename;
+            LOG.debug("Export file for process " + processId + ": " + exportURL);
+            response.getWriter().write(exportURL);
+            response.flushBuffer();
 
             GenotypingProject project = mongoTemplate.findById(projId, GenotypingProject.class);
             Map<String, InputStream> readyToExportFiles = new HashMap<>();
@@ -1103,14 +1105,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         public void run() {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
-                                progress.addStep("Reading and re-organizing genotypes"); // initial step will consist in organizing genotypes by individual rather than by marker
-                                progress.moveToNextStep();    // done with identifying variants
-                                File[] exportFiles = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList(), count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
+                                ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, variantQueryDBList, count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
                                 progress.moveToNextStep();
-                                individualOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportFiles, true, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, gsver.getMetadataFields(), IExportHandler.getIndividualPopulations(individualsByPop, true), readyToExportFiles);
+                                individualOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), exportOutputs, true, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, gsver.getMetadataFields(), IExportHandler.getIndividualPopulations(individualsByPop, true), readyToExportFiles);
                                 if (!progress.isAborted()) {
                                     LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                     progress.markAsComplete();
@@ -1130,16 +1130,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                         }
                     };
-                    if (gsver.isKeepExportOnServer())
+//                    if (gsver.isKeepExportOnServer())
                         exportThread.start();
-                    else
-                    {
-                        String contentType = individualOrientedExportHandler.getExportContentType();
-                        if (contentType != null && contentType.trim().length() > 0)
-                            response.setContentType(contentType);
-
-                        exportThread.run();
-                    }
+//                    else
+//                    {
+//                        String contentType = individualOrientedExportHandler.getExportContentType();
+//                        if (contentType != null && contentType.trim().length() > 0)
+//                            response.setContentType(contentType);
+//
+//                        exportThread.run();
+//                    }
                 }
             }
             else if (markerOrientedExportHandler != null)
@@ -1177,10 +1177,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         }
                     }
                 };
-                if (gsver.isKeepExportOnServer())
+//                if (gsver.isKeepExportOnServer())
                     exportThread.start();
-                else
-                    exportThread.run();
+//                else
+//                    exportThread.run();
             }
             else
                 throw new Exception("No export handler found for format " + gsver.getExportFormat());
@@ -1194,7 +1194,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Override
     public int getSequenceFilterCount(HttpServletRequest request, String sModule) throws IOException {
         int result = -1;
-        File sequenceListFile = new File(request.getSession().getServletContext().getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
+        File sequenceListFile = new File(servletContext.getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
         if (sequenceListFile.exists() && sequenceListFile.length() > 0) {
             try (LineNumberReader lineNumberReader = new LineNumberReader(new FileReader(sequenceListFile))) {
                 lineNumberReader.skip(Long.MAX_VALUE);
@@ -1228,25 +1228,56 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public void clearSequenceFilterFile(HttpServletRequest request, String sModule) {
-        File selectionFile = new File(request.getSession().getServletContext().getRealPath(SEQLIST_FOLDER) + File.separator + request.getSession().getId() + "_" + sModule);
+        File selectionFile = new File(servletContext.getRealPath(SEQLIST_FOLDER) + File.separator + request.getSession().getId() + "_" + sModule);
         if (selectionFile.exists()) {
             selectionFile.delete();
         }
     }
 
-    @Override
-    public void cleanupExpiredExportData(HttpServletRequest request) throws IOException {
-        if (request.getSession() == null) {
-            return;    // working around some random bug
-        }
+    static public void cleanupExpiredExportData(ServletContext sc) throws IOException {
+        Map<String, Long> folderToDelayMap = new LinkedHashMap<>() {{
+        	put(TMP_OUTPUT_DDL_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
+        	put(TMP_OUTPUT_FOLDER, EXPORT_EXPIRATION_DELAY_MILLIS);
+        	put(TMP_OUTPUT_EXTRACTION_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
+        }};
+        
         long nowMillis = new Date().getTime();
-        File filterOutputLocation = new File(request.getSession().getServletContext().getRealPath(FRONTEND_URL + File.separator + TMP_OUTPUT_FOLDER));
-        if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
-            for (File f : filterOutputLocation.listFiles()) {
-                if (f.isDirectory() && nowMillis - f.lastModified() > EXPORT_EXPIRATION_DELAY_MILLIS) {
-                    FileUtils.deleteDirectory(f);    // it is an expired job-output-folder
-                    LOG.info("Temporary folder was deleted: " + f.getPath());
-                }
+        for (Entry<String, Long> entry : folderToDelayMap.entrySet()) {
+            File filterOutputLocation = new File(sc.getRealPath(FRONTEND_URL + File.separator + entry.getKey()));
+            if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
+            	for (File userFolder : filterOutputLocation.listFiles())
+            		if (userFolder.isDirectory()) {
+                    	for (File processFolder : userFolder.listFiles())
+                    		if (processFolder.isDirectory()) {
+                    			if (nowMillis - processFolder.lastModified() > entry.getValue()) {
+                					FileSystemUtils.deleteRecursively(processFolder);
+//                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
+                    			}
+                    			else {
+	                    			for (File exportFileOrFolder : processFolder.listFiles()) {
+	                    				if (nowMillis - exportFileOrFolder.lastModified() > entry.getValue()) {
+		                    				if (exportFileOrFolder.isDirectory()) {
+		                    					FileSystemUtils.deleteRecursively(exportFileOrFolder);
+//		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
+		                    				}
+		                    				else {
+		                    					exportFileOrFolder.delete();
+//		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
+		                    				}
+	                    				}
+	                    			}
+	                    			if (processFolder.listFiles().length == 0) {
+	                					FileSystemUtils.deleteRecursively(processFolder);
+//	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
+	                    			}
+                    			}
+                    		}
+
+            			if (userFolder.listFiles().length == 0) {
+        					FileSystemUtils.deleteRecursively(userFolder);
+//        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
+            			}
+            		}
             }
         }
     }
@@ -1286,7 +1317,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public String getSequenceFilterQueryKey(HttpServletRequest request, String sModule) throws IOException {
 
         String qk = null;
-        File sequenceListFile = new File(request.getSession().getServletContext().getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
+        File sequenceListFile = new File(servletContext.getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
         if (sequenceListFile.exists() && sequenceListFile.length() > 0) {
             try (LineNumberReader lineNumberReader = new LineNumberReader(new FileReader(sequenceListFile))) {
                 qk = lineNumberReader.readLine();
@@ -2848,6 +2879,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                info.put("supportedPloidyLevels", StringUtils.join(ArrayUtils.toObject(exportHandler.getSupportedPloidyLevels()), ";"));
 	                info.put("dataFileExtensions", StringUtils.join(exportHandler.getExportDataFileExtensions(), ";"));
 	                info.put("supportedVariantTypes", StringUtils.join(exportHandler.getSupportedVariantTypes(), ";"));
+	                exportHandler.setTmpFolder(servletContext.getRealPath(FRONTEND_URL + File.separator + TMP_OUTPUT_EXTRACTION_FOLDER));
 	                exportFormats.put(exportHandler.getExportFormatName(), info);
 	            }
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException ex) {
@@ -2947,4 +2979,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         LOG.info("searchGenesLookup found " + values.size() + " results in " + (System.currentTimeMillis() - before) / 1000d + "s");
         return values;
     }
+
+	@Override
+	public void setServletContext(ServletContext servletContext) {
+		this.servletContext = servletContext;
+	}
 }
