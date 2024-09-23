@@ -660,8 +660,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * @param processID the process id
      * @param fEmptyItBeforeHand whether or not to empty it beforehand
      * @return the temporary variant collection
+	 * @throws InterruptedException 
      */
-    public MongoCollection<Document> getTemporaryVariantCollection(String sModule, String processID, boolean fEmptyItBeforeHand) {
+    public MongoCollection<Document> getTemporaryVariantCollection(String sModule, String processID, boolean fEmptyItBeforeHand) throws InterruptedException {
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         MongoCollection<Document> tmpColl = mongoTemplate.getCollection(MongoTemplateManager.TEMP_COLL_PREFIX + Helper.convertToMD5(processID));
         if (fEmptyItBeforeHand) {
@@ -675,7 +676,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //            LOG.debug("Dropping " + sModule + "." + tmpColl.getName() + " from getTemporaryVariantCollection", e);
 
             tmpColl.drop();
-            MgdbDao.ensurePositionIndexes(mongoTemplate, Arrays.asList(tmpColl));    // make sure we have indexes defined as required in v2.4
+            MgdbDao.ensurePositionIndexes(mongoTemplate, Arrays.asList(tmpColl), false, false);    // make sure we have indexes defined as required in v2.4
         }
         return tmpColl;
     }
@@ -1294,14 +1295,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public void dropTempColl(String sModule, String processID) {
+    public void dropTempColl(String sModule, String processID) throws InterruptedException {
         String collName = getTemporaryVariantCollection(sModule, processID, false).getNamespace().getCollectionName();
         MongoTemplateManager.get(sModule).dropCollection(collName);
         LOG.debug("Dropped collection " + sModule + "." + collName);
     }
 
     @Override
-    public Collection<String> distinctSequencesInSelection(HttpServletRequest request, String sModule, int projId, String processID) {
+    public Collection<String> distinctSequencesInSelection(HttpServletRequest request, String sModule, int projId, String processID) throws InterruptedException {
         String sShortProcessID = processID/*.substring(1 + processID.indexOf('|'))*/;
         MongoCollection<Document> tmpVarColl = getTemporaryVariantCollection(sModule, sShortProcessID, false);
         if (tmpVarColl.estimatedDocumentCount() == 0) {
