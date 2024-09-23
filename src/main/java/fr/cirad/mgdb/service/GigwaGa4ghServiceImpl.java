@@ -1593,9 +1593,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                                 break;
 
                                             default:
-                                                List<String> callAddinfoContent = new ArrayList<>();
-                                                callAddinfoContent.add(callAdditionalInfo.get(aiKey).toString());
-                                                aiCall.put(aiKey, callAddinfoContent);
+                                            	Object val = callAdditionalInfo.get(aiKey);
+                                            	if (val != null)
+	                                                aiCall.put(aiKey, Arrays.asList(val.toString()));
                                                 break;
                                         }
                                     }
