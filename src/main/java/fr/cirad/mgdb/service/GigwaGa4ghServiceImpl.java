@@ -1252,31 +1252,31 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     		if (processFolder.isDirectory()) {
                     			if (nowMillis - processFolder.lastModified() > entry.getValue()) {
                 					FileSystemUtils.deleteRecursively(processFolder);
-                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
+//                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
                     			}
                     			else {
 	                    			for (File exportFileOrFolder : processFolder.listFiles()) {
 	                    				if (nowMillis - exportFileOrFolder.lastModified() > entry.getValue()) {
 		                    				if (exportFileOrFolder.isDirectory()) {
 		                    					FileSystemUtils.deleteRecursively(exportFileOrFolder);
-		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
+//		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
 		                    				}
 		                    				else {
 		                    					exportFileOrFolder.delete();
-		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
+//		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
 		                    				}
 	                    				}
 	                    			}
 	                    			if (processFolder.listFiles().length == 0) {
 	                					FileSystemUtils.deleteRecursively(processFolder);
-	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
+//	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
 	                    			}
                     			}
                     		}
 
             			if (userFolder.listFiles().length == 0 && !TMP_OUTPUT_EXTRACTION_FOLDER.equals(entry.getKey()) /* avoid interfering with ongoing exports */) {
         					FileSystemUtils.deleteRecursively(userFolder);
-        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
+//        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
             			}
             		}
             }
