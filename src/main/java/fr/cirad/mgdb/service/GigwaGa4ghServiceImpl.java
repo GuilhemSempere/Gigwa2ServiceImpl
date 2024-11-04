@@ -568,7 +568,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
                                 		if (genotypingDataPipeline.isEmpty()) {
                                             partialCountArray[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
-                                            finishedThreadCount.incrementAndGet();
+                                            finalProgress.setCurrentStepProgress((short) (finishedThreadCount.incrementAndGet() * 100 / nChunkCount));
                                             return;
                                 		}
 	                                    MongoCursor<Document> it = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(genotypingDataPipeline).allowDiskUse(isAggregationAllowedToUseDisk()).iterator();
@@ -836,7 +836,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 		applyPreFiltering(genotypingDataPipeline, fMongoOnSameServer, varColl);
                                 		if (genotypingDataPipeline.isEmpty()) {
                                 			partialCountArrayToFill[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
-                                            finishedThreadCount.incrementAndGet();
+                                			progress.setCurrentStepProgress((short) (finishedThreadCount.incrementAndGet() * 100 / (partialCountMap.isEmpty() ? nChunkCount : partialCountMap.size())));
                                             return;
                                 		}
 
@@ -1106,7 +1106,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         public void run() {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
-                                ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, variantQueryDBList, count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
+                                ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, nTempVarCount == 0 ? variantQueryDBList : new BasicDBList(), count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
@@ -1252,31 +1252,31 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     		if (processFolder.isDirectory()) {
                     			if (nowMillis - processFolder.lastModified() > entry.getValue()) {
                 					FileSystemUtils.deleteRecursively(processFolder);
-//                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
+                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
                     			}
                     			else {
 	                    			for (File exportFileOrFolder : processFolder.listFiles()) {
 	                    				if (nowMillis - exportFileOrFolder.lastModified() > entry.getValue()) {
 		                    				if (exportFileOrFolder.isDirectory()) {
 		                    					FileSystemUtils.deleteRecursively(exportFileOrFolder);
-//		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
+		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
 		                    				}
 		                    				else {
 		                    					exportFileOrFolder.delete();
-//		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
+		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
 		                    				}
 	                    				}
 	                    			}
 	                    			if (processFolder.listFiles().length == 0) {
 	                					FileSystemUtils.deleteRecursively(processFolder);
-//	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
+	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
 	                    			}
                     			}
                     		}
 
-            			if (userFolder.listFiles().length == 0) {
+            			if (userFolder.listFiles().length == 0 && !TMP_OUTPUT_EXTRACTION_FOLDER.equals(entry.getKey()) /* avoid interfering with ongoing exports */) {
         					FileSystemUtils.deleteRecursively(userFolder);
-//        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
+        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
             			}
             		}
             }
