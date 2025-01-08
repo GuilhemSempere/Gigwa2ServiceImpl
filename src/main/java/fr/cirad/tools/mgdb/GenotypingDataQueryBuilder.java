@@ -52,7 +52,7 @@ import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
 import fr.cirad.mgdb.model.mongodao.MgdbDao;
-import fr.cirad.model.GigwaSearchVariantsRequest;
+import fr.cirad.model.MgdbSearchVariantsRequest;
 import fr.cirad.tools.Helper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
 
@@ -77,7 +77,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     /** The operator. */
     private List<String> operator;
     
-    private GigwaSearchVariantsRequest req;
+    private MgdbSearchVariantsRequest req;
     
     private HashSet<Integer> mutualDiscrim = new HashSet<>();;  // end of the query will be skipped for half of the groups mutually discriminating
     
@@ -127,27 +127,27 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
     static
     {
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, "This will allow all variants whithout applying any filters");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "This will allow variants where not all selected individuals have the same genotype");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "This will allow variants where all or most selected individuals have the same genotype");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "This will allow variants where none of the selected individuals have the same genotype");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "This will allow variants where some of the selected individuals have the same genotypes");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "This will allow variants where selected individuals are all homozygous with the reference allele");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will allow variants where where at least one selected individual is homozygous with the reference allele");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will allow variants where selected individuals are all homozygous with an alternate allele");
-        genotypePatternToDescriptionMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will allow variants where at least one selected individual is homozygous with an alternate allele");
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, null);
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "$eq");
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "$eq" + GigwaSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "$ne");
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "$ne" + GigwaSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
-        genotypePatternToQueryMap.put(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, "This will allow all variants whithout applying any filters");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "This will allow variants where not all selected individuals have the same genotype");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "This will allow variants where all or most selected individuals have the same genotype");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "This will allow variants where none of the selected individuals have the same genotype");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "This will allow variants where some of the selected individuals have the same genotypes");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "This will allow variants where selected individuals are all homozygous with the reference allele");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will allow variants where where at least one selected individual is homozygous with the reference allele");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will allow variants where selected individuals are all homozygous with an alternate allele");
+        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will allow variants where at least one selected individual is homozygous with an alternate allele");
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, null);
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "$eq");
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "$eq" + MgdbSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "$ne");
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "$ne" + MgdbSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
+        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
     }
 
-    public GenotypingDataQueryBuilder(GigwaSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
+    public GenotypingDataQueryBuilder(MgdbSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
     {
         this.req = gsvr;
         mutualDiscrim = new HashSet<>();
@@ -179,7 +179,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         q.addCriteria(Criteria.where(GenotypingProject.FIELDNAME_EFFECT_ANNOTATIONS + ".0").exists(true));
         this.projectHasEffectAnnotations = mongoTemplate.findOne(q, GenotypingProject.class) != null;
 
-        filteredGroups = getGroupsForWhichToFilterOnGenotypingOrAnnotationData(req, false);
+        filteredGroups = VariantQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(req, false);
         int numberGroups = req.getNumberGroups();
         this.operator = new ArrayList<>(Collections.nCopies(numberGroups, null));
         this.individualToSampleListMap = new ArrayList<>(Collections.nCopies(numberGroups, new TreeMap<>()));
@@ -339,18 +339,18 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             for (int g : filteredGroups) {
                 cleanOperator[g] = operator.get(g);
                 if (cleanOperator[g] != null) {
-                    if (cleanOperator[g].endsWith(GigwaSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX)) {
+                    if (cleanOperator[g].endsWith(MgdbSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX)) {
                         fNegateMatch[g] = true;
-                        cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - GigwaSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX.length());
+                        cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - MgdbSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX.length());
                     }
-                    else if (cleanOperator[g].endsWith(GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX)) {
+                    else if (cleanOperator[g].endsWith(MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX)) {
                         fZygosityRegex[g] = true;
-                        cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX.length());
+                        cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX.length());
                     }
-                    else if (cleanOperator[g].endsWith(GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX)) {
+                    else if (cleanOperator[g].endsWith(MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX)) {
                         fZygosityRegex[g] = true;
                         fOr[g] = true;
-                        cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - GigwaSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX.length());
+                        cleanOperator[g] = cleanOperator[g].substring(0, cleanOperator[g].length() - MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX.length());
                     }
                 }
     
@@ -834,26 +834,5 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
     public void setMaxAlleleCount(int maxAlleleCount) {
         this.maxAlleleCount = maxAlleleCount;
-    }
-
-    static public List<Integer> getGroupsForWhichToFilterOnGenotypingData(GigwaSearchVariantsRequest gsvr, boolean fConsiderFieldThresholds)
-    {
-        List<Integer> result = new ArrayList<>();
-        for (int i = 0; i < gsvr.getNumberGroups(); i++) {
-            if (gsvr.isDiscriminate(i) || !gsvr.getGtPattern(i).equals(GigwaSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL) || gsvr.getMinHeZ(i) > 0 || gsvr.getMaxHeZ(i) < 100 || gsvr.getMinMissingData(i) > 0 || gsvr.getMaxMissingData(i) < 100 || gsvr.getMinMaf(i) > 0 || gsvr.getMaxMaf(i) < 50)
-                result.add(i);
-        }
-        return result;
-    }
-    
-    static public List<Integer> getGroupsForWhichToFilterOnGenotypingOrAnnotationData(GigwaSearchVariantsRequest gsvr, boolean fConsiderFielThresholds)
-    {
-        List<Integer> result = getGroupsForWhichToFilterOnGenotypingData(gsvr, fConsiderFielThresholds);
- 
-        if (result.size() == 0 && (gsvr.getGeneName().length() > 0 || gsvr.getVariantEffect().length() > 0))
-            result.add(0);    // needed at least for filtering on annotation data or distinguish records according to project id
-
-        /*FIXME: this should also force filtering on VRD in cases where only some runs of the selected project are involved*/
-        return result;
     }
 }
