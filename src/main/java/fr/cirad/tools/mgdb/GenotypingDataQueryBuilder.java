@@ -163,11 +163,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         for (Object orObject : variantQueryDBList)
             try {
             	List<BasicDBObject> variantFilterAndList = (List<BasicDBObject>) ((BasicDBObject)((Collection)((BasicDBObject) orObject).get("$or")).iterator().next()).get("$and");
-                for (Object variantFilter : variantFilterAndList)
-	            	if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE))
-	                    m_fFilteringOnSequence = true;
-	                else if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE))
-	                	m_fFilteringOnStartSite = true;
+            	if (variantFilterAndList != null)		// there can be other $or operators like {"$or": [{"ka": {"$size": 2}}]} for example
+	                for (Object variantFilter : variantFilterAndList)
+		            	if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE))
+		                    m_fFilteringOnSequence = true;
+		                else if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE))
+		                	m_fFilteringOnStartSite = true;
 	        }
 	        catch (Exception ignored) {
 	        	// probably there isn't such a filter
