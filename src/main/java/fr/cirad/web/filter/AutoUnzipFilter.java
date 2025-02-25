@@ -56,8 +56,7 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain fc) throws IOException, ServletException
 	{
-		if (! (request instanceof HttpServletRequest))
-		{
+		if (! (request instanceof HttpServletRequest)) {
 			fc.doFilter(request, response);
 			return;
 		}
@@ -67,19 +66,21 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 		File f = new File(hsRequest.getSession().getServletContext().getRealPath(sServletPath));
 		int nLastDotPos = sServletPath.lastIndexOf(".");
 
-		if (f.exists() || nLastDotPos == -1)
-		{
+		if (f.exists() || nLastDotPos == -1) {
 			fc.doFilter(request, response);
 			return;
 		}
 
-		String sServletPathWithoutExtension = sServletPath.substring(0, nLastDotPos), extension = sServletPath.substring(nLastDotPos);
+		String extension = sServletPath.substring(nLastDotPos);
+		if (".gz".equalsIgnoreCase(extension)) {
+			nLastDotPos = sServletPath.substring(0, sServletPath.length() - 3).lastIndexOf(".");
+			extension = sServletPath.substring(nLastDotPos);
+		}
+		String sServletPathWithoutExtension = sServletPath.substring(0, nLastDotPos);
 		f = new File(hsRequest.getSession().getServletContext().getRealPath(sServletPathWithoutExtension + ".zip"));
-		if (!f.exists())
-		{
+		if (!f.exists()) {
 			f = new File(hsRequest.getSession().getServletContext().getRealPath(sServletPathWithoutExtension + ".fjzip"));
-			if (!f.exists())
-			{
+			if (!f.exists()) {
 				fc.doFilter(request, response);
 				return;
 			}
