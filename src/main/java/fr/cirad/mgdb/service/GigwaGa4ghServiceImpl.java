@@ -62,6 +62,7 @@ import javax.ejb.ObjectNotFoundException;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 
 import org.apache.avro.AvroRemoteException;
 import org.apache.commons.lang.StringUtils;
@@ -1063,6 +1064,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (!outputLocation.exists() && !outputLocation.mkdirs()) {
                 throw new Exception("Unable to create folder: " + outputLocation);
             }
+            
+            HttpSession session = gsver.getRequest().getSession();	// get it before starting to use the response (otherwise CORS invocations may make it invalid when we try and use it) 
             os = new FileOutputStream(new File(outputLocation.getAbsolutePath() + File.separator + filename));
             response.setContentType("text/plain");
             String exportURL = gsver.getRequest().getContextPath() + "/" + relativeOutputFolder.replace(File.separator, "/") + filename;
@@ -1087,7 +1090,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (individualOrientedExportHandler != null)
             {
                 if (!progress.isAborted()) {
-                    Thread exportThread = new SessionAttributeAwareThread(gsver.getRequest().getSession()) {
+                    Thread exportThread = new SessionAttributeAwareThread(session) {
                         public void run() {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
@@ -1116,16 +1119,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                         }
                     };
-//                    if (gsver.isKeepExportOnServer())
-                        exportThread.start();
-//                    else
-//                    {
-//                        String contentType = individualOrientedExportHandler.getExportContentType();
-//                        if (contentType != null && contentType.trim().length() > 0)
-//                            response.setContentType(contentType);
-//
-//                        exportThread.run();
-//                    }
+                    exportThread.start();
                 }
             }
             else if (markerOrientedExportHandler != null)
@@ -1139,7 +1133,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 if (contentType != null && contentType.trim().length() > 0)
                     response.setContentType(contentType);
 
-                Thread exportThread = new SessionAttributeAwareThread(gsver.getRequest().getSession()) {
+                Thread exportThread = new SessionAttributeAwareThread(session) {
                     public void run() {
                     	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                         try {
@@ -1163,10 +1157,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         }
                     }
                 };
-//                if (gsver.isKeepExportOnServer())
-                    exportThread.start();
-//                else
-//                    exportThread.run();
+                exportThread.start();
             }
             else
                 throw new Exception("No export handler found for format " + gsver.getExportFormat());
