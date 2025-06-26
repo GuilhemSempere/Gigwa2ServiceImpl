@@ -175,15 +175,16 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 	        	ignored.printStackTrace();
 	        }
         
-        String info[] = Helper.getInfoFromId(req.getVariantSetId(), 2);
-        String sModule = info[0];
-        int projId = Integer.parseInt(info[1]);
+    	String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(req.getVariantSetId());
+        Integer[] projIDs = Arrays.stream(info[1].split(";")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
+        if (projIDs.length > 1)
+        	throw new Exception("Querying on several projects' genotyping data is not yet supported!");
 
-        this.mongoTemplate = MongoTemplateManager.get(sModule);
-        this.genotypingProject = mongoTemplate.findById(Integer.valueOf(projId), GenotypingProject.class);
+        this.mongoTemplate = MongoTemplateManager.get(info[0]);
+        this.genotypingProject = mongoTemplate.findById(Integer.valueOf(projIDs[0]), GenotypingProject.class);
 
         Query q = new Query();
-        q.addCriteria(Criteria.where("_id").is(projId));
+        q.addCriteria(Criteria.where("_id").in(projIDs));
         q.addCriteria(Criteria.where(GenotypingProject.FIELDNAME_EFFECT_ANNOTATIONS + ".0").exists(true));
         this.projectHasEffectAnnotations = mongoTemplate.findOne(q, GenotypingProject.class) != null;
 
@@ -195,20 +196,20 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
         List<List<String>> callsetIds = req.getAllCallSetIds();
         for (int nGroupIndex = 0; nGroupIndex < callsetIds.size(); nGroupIndex++) {
-            Collection<String> groupIndividuals = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
+            Collection<String> groupIndividuals = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty() ? MgdbDao.getProjectIndividuals(info[0], projIDs) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
             this.operator.set(nGroupIndex, genotypePatternToQueryMap.get(req.getGtPattern(nGroupIndex)));
-            this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProject(sModule, projId, groupIndividuals));
+            this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProject(info[0], projIDs, groupIndividuals));
         }
 
         int nTotalChunkCount = (int) Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         if (nTotalChunkCount == 1) {
-            MgdbDao.prepareDatabaseForSearches(sModule);    // list does not exist: create it
+            MgdbDao.prepareDatabaseForSearches(info[0]);    // list does not exist: create it
             nTotalChunkCount = (int) Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         }
 
         if (m_fFilteringOnSequence && m_fFilteringOnStartSite) {	// when filtering on a precise zone of the genome it's slightly quicker to chunk that given zone rather than use tagged variants
 	        Long[] minMaxFound = new Long[2];   // will be filled in by the method below
-	        Helper.findDefaultRangeMinMax(info[0], Integer.parseInt(info[1]), null, null, null, gsvr.getStart(), gsvr.getEnd(), minMaxFound);
+	        Helper.findDefaultRangeMinMax(info[0], projIDs, null, null, null, gsvr.getStart(), gsvr.getEnd(), minMaxFound);
 	        this.intervalQueries = Helper.getIntervalQueries(nTotalChunkCount, null, null, minMaxFound[0], minMaxFound[1], variantQueryDBList).stream().map(dbo -> { BasicDBList l = new BasicDBList(); l.add(dbo); return l; } ).collect(Collectors.toList());
         }
         else {
