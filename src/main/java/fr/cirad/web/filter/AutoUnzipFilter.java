@@ -33,6 +33,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.log4j.Logger;
+import org.springframework.http.HttpHeaders;
 
 /**
  * The Class AutoUnzipFilter.
@@ -67,6 +68,7 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 		int nLastDotPos = sServletPath.lastIndexOf(".");
 
 		if (f.exists() || nLastDotPos == -1) {
+			((HttpServletResponse) response).addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + f.getName());
 			fc.doFilter(request, response);
 			return;
 		}
@@ -81,6 +83,7 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 		if (!f.exists()) {
 			f = new File(hsRequest.getSession().getServletContext().getRealPath(sServletPathWithoutExtension + ".fjzip"));
 			if (!f.exists()) {
+				((HttpServletResponse) response).addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + f.getName());
 				fc.doFilter(request, response);
 				return;
 			}
@@ -95,11 +98,11 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 			if (extension.startsWith("."))
 				extension = extension.substring(1);
 			
-			((HttpServletResponse) response).addHeader("Access-Control-Allow-Origin", hsRequest.getHeader("Origin"));
-			String acceptEncoding = hsRequest.getHeader("Accept-Encoding");
+			((HttpServletResponse) response).addHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, hsRequest.getHeader("Origin"));
+			String acceptEncoding = hsRequest.getHeader(HttpHeaders.ACCEPT_ENCODING);
 			boolean fDoGzipCompression = acceptEncoding != null && acceptEncoding.contains("gzip");
 			if (fDoGzipCompression)
-				((HttpServletResponse) response).setHeader("Content-Encoding", "gzip");
+				((HttpServletResponse) response).setHeader(HttpHeaders.CONTENT_ENCODING, "gzip");
 
 			OutputStream os = fDoGzipCompression ? new GZIPOutputStream(response.getOutputStream()) : response.getOutputStream();
 			byte[] buffer = new byte[1024];
@@ -110,7 +113,7 @@ public class AutoUnzipFilter implements javax.servlet.Filter {
 	    		{
 	    			LOG.debug("Sending file " + fileName + " from archive " + f.getName() + " into response");
 //					response.setContentType("application/octet-stream;charset=ISO-8859-1");
-					((HttpServletResponse) response).setHeader("Content-disposition", "inline; filename=" + fileName);
+					((HttpServletResponse) response).setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + fileName);
 	            	int len;
 		            while ((len = zis.read(buffer)) > 0)
 		            	os.write(buffer, 0, len);
