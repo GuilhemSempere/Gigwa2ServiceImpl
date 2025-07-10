@@ -384,7 +384,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         return "This is a big database. Given the number of selected individuals, you may only work on a maximum of " + nMaxSeqCount + " sequence(s) at a time.";
     }
-    
+
     /**
      * Modifies a VRD query's initial $match stage to apply correct paths for VariantData objects
      * (The passed reference gets modified so make sure you pass a clone to this method if you need to keep a VRD version in the calling code)
@@ -420,10 +420,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	toRemove.add((DBObject) filter);
             toAdd.add(modifiedFilter);       
         }
-//        System.err.print(forTmpColl + ": " + initialMatchForVariantColl + "  =>  ");
         initialMatchForVariantColl.removeAll(toRemove);
         initialMatchForVariantColl.addAll(toAdd);
-//        System.err.println(initialMatchForVariantColl);
         initialMatch.put("$and", initialMatchForVariantColl);	// replaces the previous version
         return fMultiProjectDB;
     }
@@ -791,9 +789,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		                if (nChunkCount > 1)
 		                    LOG.debug("Query split into " + nChunkCount);
 
-		                int i = -1;
-		                final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
-		                final HashMap<Integer, BasicDBObject> rangesToCount = partialCountArrayToFill != null ? new HashMap<>() : null;
+                        int i = -1;
+                        final MongoCollection<Document> vrdColl = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class));
+                        final HashMap<Integer, BasicDBObject> rangesToCount = partialCountArrayToFill != null ? new HashMap<>() : null;
                         String taskGroup = "find_" + System.currentTimeMillis() + "_" + token;
 //                        Long b4 = System.currentTimeMillis();
                         
@@ -830,7 +828,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 				partialCountArrayToFill[chunkIndex] = 0l;	// no variants match indexed part of the query: skip chunk
                                 			progress.setCurrentStepProgress((short) (finishedThreadCount.incrementAndGet() * 100 / (partialCountMap.isEmpty() ? nChunkCount : partialCountMap.size())));
                                             return;
-                                		}
+                                        }
 
 	                                    boolean fMergeFailedOnThisChunk = false;
 	                                    if (!hostsNotSupportingMergeOperator.contains(sMongoHost))

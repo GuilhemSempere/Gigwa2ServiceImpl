@@ -321,7 +321,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     {
         List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
         BasicDBList annotationMatchList = new BasicDBList(), finalMatchList = new BasicDBList();
-        BasicDBList initialMatchList = intervalQueries.set(intervalIndexList.get(nNextCallCount++).intValue(), null);	// set this one to null to save memory
+        BasicDBList initialMatchList = intervalQueries.set(intervalIndexList.get(nNextCallCount++).intValue(), null);   // set this one to null to save memory
 
         /* Step to match variants according to annotations */            
         if (projectHasEffectAnnotations && (req.getGeneName().length() > 0 || req.getVariantEffect().length() > 0)) {
