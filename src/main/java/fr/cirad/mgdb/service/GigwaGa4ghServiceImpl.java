@@ -423,10 +423,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	toRemove.add((DBObject) filter);
             toAdd.add(modifiedFilter);       
         }
-//        System.err.print(forTmpColl + ": " + initialMatchForVariantColl + "  =>  ");
         initialMatchForVariantColl.removeAll(toRemove);
         initialMatchForVariantColl.addAll(toAdd);
-//        System.err.println(initialMatchForVariantColl);
         initialMatch.put("$and", initialMatchForVariantColl);	// replaces the previous version
         return fMultiProjectDB;
     }
