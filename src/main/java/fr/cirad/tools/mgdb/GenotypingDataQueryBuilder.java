@@ -295,7 +295,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     @Override
     public boolean hasNext()
     {
-        return intervalQueries.size() > 0 && intervalIndexList.size() > 0;
+        return intervalQueries.size() > nNextCallCount;
     }
     
     public List<Integer> shuffleChunkOrder()
@@ -310,11 +310,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     @Override
     public List<BasicDBObject> next()
     {
-        nNextCallCount++;
-                        
         List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
         BasicDBList annotationMatchList = new BasicDBList(), finalMatchList = new BasicDBList();
-        BasicDBList initialMatchList = intervalQueries.remove(0);
+        BasicDBList initialMatchList = intervalQueries.set(intervalIndexList.get(nNextCallCount++).intValue(), null);   // set this one to null to save memory
 
         /* Step to match variants according to annotations */            
         if (projectHasEffectAnnotations && (req.getGeneName().length() > 0 || req.getVariantEffect().length() > 0)) {
