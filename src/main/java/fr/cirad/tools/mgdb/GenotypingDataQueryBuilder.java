@@ -146,7 +146,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
     }
 
-    public GenotypingDataQueryBuilder(MgdbSearchVariantsRequest gsvr, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
+    public GenotypingDataQueryBuilder(MgdbSearchVariantsRequest gsvr, boolean workWithSamples, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
     {
         this.req = gsvr;
         mutualDiscrim = new HashSet<>();
@@ -170,11 +170,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 		                else if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE))
 		                	m_fFilteringOnStartSite = true;
 	        }
-	        catch (Exception ignored) {
-	        	// probably there isn't such a filter
-	        	ignored.printStackTrace();
-	        }
-        
+	        catch (Exception ignored)
+        	{} // probably there isn't such a filter
+	    
         String info[] = Helper.getInfoFromId(req.getVariantSetId(), 2);
         String sModule = info[0];
         int projId = Integer.parseInt(info[1]);
@@ -195,9 +193,20 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
         List<List<String>> callsetIds = req.getAllCallSetIds();
         for (int nGroupIndex = 0; nGroupIndex < callsetIds.size(); nGroupIndex++) {
-            Collection<String> groupIndividuals = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
             this.operator.set(nGroupIndex, genotypePatternToQueryMap.get(req.getGtPattern(nGroupIndex)));
-            this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProject(sModule, projId, groupIndividuals));
+            boolean noMaterialSelected = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty();	// will be treated as "all material selected"
+            if (workWithSamples) {
+                Collection<GenotypingSample> groupSamples = noMaterialSelected ? MgdbDao.getSamplesForProject(sModule, projId, null) : mongoTemplate.find(new Query(Criteria.where("_id").in(callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))))), GenotypingSample.class);
+                this.individualToSampleListMap.set(nGroupIndex, groupSamples.stream().collect(Collectors.groupingBy(
+                	sample -> sample.getId().toString(),
+                    TreeMap::new,
+                    Collectors.toCollection(ArrayList::new)
+                )));
+            }
+            else {
+                Collection<String> groupIndividuals = noMaterialSelected ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
+                this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProject(sModule, projId, groupIndividuals));
+            }
         }
 
         int nTotalChunkCount = (int) Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
@@ -295,7 +304,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     @Override
     public boolean hasNext()
     {
-        return intervalQueries.size() > 0 && intervalIndexList.size() > 0;
+        return intervalQueries.size() > nNextCallCount;
     }
     
     public List<Integer> shuffleChunkOrder()
@@ -310,11 +319,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     @Override
     public List<BasicDBObject> next()
     {
-        nNextCallCount++;
-                        
         List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
         BasicDBList annotationMatchList = new BasicDBList(), finalMatchList = new BasicDBList();
-        BasicDBList initialMatchList = intervalQueries.remove(0);
+        BasicDBList initialMatchList = intervalQueries.set(intervalIndexList.get(nNextCallCount++).intValue(), null);	// set this one to null to save memory
 
         /* Step to match variants according to annotations */            
         if (projectHasEffectAnnotations && (req.getGeneName().length() > 0 || req.getVariantEffect().length() > 0)) {
