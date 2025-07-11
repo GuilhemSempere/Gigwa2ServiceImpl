@@ -436,7 +436,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	boolean fMultiProjectDB = convertMatchStageFromVrdToVariant(initialMatchForVariantColl, false);
 
             if (fMongoOnSameServer) {    // always worth pre-filtering
-                MongoCursor<Document> variantCursor = varColl.find(new BasicDBObject("$and", initialMatchForVariantColl)).projection(new BasicDBObject("_id", 1)).iterator();
+                MongoCursor<Document> variantCursor = varColl.find(initialMatchForVariantColl).projection(new BasicDBObject("_id", 1)).iterator();
                 List<Comparable> chunkPreFilteredIDs = new ArrayList<>();
                 while (variantCursor.hasNext())
                 	chunkPreFilteredIDs.add((Comparable) variantCursor.next().get("_id"));
