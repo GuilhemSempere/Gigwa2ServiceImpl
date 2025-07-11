@@ -1012,9 +1012,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         VariantQueryWrapper varQueryWrapper = VariantQueryBuilder.buildVariantDataQuery(gsver/*, getSequenceIDsBeingFilteredOn(gsver.getRequest().getSession(), sModule)*/, true);
         Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
-        final BasicDBList variantQueryDBList = variantDataQueries.size() == 1 ? variantDataQueries.iterator().next() : new BasicDBList();
 
-        Document variantQuery = nTempVarCount == 0 && !variantDataQueries.isEmpty() ? new Document("$and", variantQueryDBList) : new Document();
+        Document variantQueryForTargetCollection = variantDataQueries.isEmpty() ? new Document() : (nTempVarCount == 0 ? new Document("$and", variantDataQueries.iterator().next()) : (varQueryWrapper.getBareQueries().iterator().hasNext() ? new Document("$and", varQueryWrapper.getBareQueries().iterator().next()) : new Document()));
+   
         String usedVarCollName = nTempVarCount == 0 ? mongoTemplate.getCollectionName(VariantData.class) : tmpVarColl.getNamespace().getCollectionName();
 
         Authentication auth = tokenManager.getAuthenticationFromToken(tokenManager.readToken(gsver.getRequest()));
@@ -1038,7 +1038,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 return;
             }
 
-            BigInteger matrixSize = BigInteger.valueOf(mongoTemplate.getCollection(usedVarCollName).countDocuments(variantQuery)).multiply(BigInteger.valueOf(individualsToExport.size()));
+            BigInteger matrixSize = BigInteger.valueOf(mongoTemplate.getCollection(usedVarCollName).countDocuments(variantQueryForTargetCollection)).multiply(BigInteger.valueOf(individualsToExport.size()));
             BigInteger maxAllowedSize = BigInteger.valueOf(1000000000).multiply(BigInteger.valueOf(nMaxBillionGenotypesInvolved));
 
             if (matrixSize.divide(maxAllowedSize).intValue() >= 1)
@@ -1098,7 +1098,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         public void run() {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
-                                ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, nTempVarCount == 0 ? variantQueryDBList : new BasicDBList(), count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
+                                ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, Assembly.getThreadBoundAssembly(), nTempVarCount == 0 ? null : usedVarCollName, variantQueryForTargetCollection, count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
