@@ -196,7 +196,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             this.operator.set(nGroupIndex, genotypePatternToQueryMap.get(req.getGtPattern(nGroupIndex)));
             boolean noMaterialSelected = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty();	// will be treated as "all material selected"
             if (workWithSamples) {
-                Collection<GenotypingSample> groupSamples = noMaterialSelected ? MgdbDao.getSamplesForProject(sModule, projId, null) : mongoTemplate.find(new Query(Criteria.where("_id").in(callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))))), GenotypingSample.class);
+                Collection<GenotypingSample> groupSamples = noMaterialSelected ? MgdbDao.getSamplesForProject(sModule, projId, null) : mongoTemplate.find(new Query(Criteria.where("_id").in(callsetIds.get(nGroupIndex).stream().map(csi -> Integer.parseInt(csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR)))).toList())), GenotypingSample.class);
                 this.individualToSampleListMap.set(nGroupIndex, groupSamples.stream().collect(Collectors.groupingBy(
                 	sample -> sample.getId().toString(),
                     TreeMap::new,

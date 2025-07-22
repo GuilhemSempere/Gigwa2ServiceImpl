@@ -999,7 +999,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             annotationFieldThresholdsByPop.put(gsver.getGroupName(i), gsver.getAnnotationFieldThresholds(i));
         }
 
-        Collection<String> materialToExport = workWithSamples ? (!gsver.getExportedIndividuals().isEmpty() ? mongoTemplate.findDistinct(new Query(Criteria.where("_id").in(gsver.getExportedIndividuals().stream().map(id -> Integer.parseInt(id)).toList())), GenotypingSample.FIELDNAME_NAME, GenotypingSample.class, String.class) : MgdbDao.getSamplesForProject(sModule, projId, null).stream().map(sp -> sp.getSampleName()).toList())
+        Collection materialToExport = workWithSamples ? (!gsver.getExportedIndividuals().isEmpty() ? gsver.getExportedIndividuals().stream().map(id -> Integer.parseInt(id)).toList() : MgdbDao.getSamplesForProject(sModule, projId, null).stream().map(sp -> sp.getId()).toList())
         		: (gsver.getExportedIndividuals().isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projId) : gsver.getExportedIndividuals());
 
         long count = countVariants(gsver, workWithSamples, true);
@@ -1090,10 +1090,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 readyToExportFiles.put("HOW_TO_CITE.txt", new ByteArrayInputStream(sCitingText.getBytes("UTF-8")));
 
             final OutputStream finalOS = os;
-            ArrayList<GenotypingSample> samplesToExport = workWithSamples ? new ArrayList<>(MgdbDao.getSamplesByNames(sModule, materialToExport).values()) : MgdbDao.getSamplesForProject(sModule, projId, materialToExport);
-            if (workWithSamples)
-            	for (GenotypingSample sp : samplesToExport)	// hack them so each sample is considered separately
-            		sp.setDetached(true);
+            ArrayList<GenotypingSample> samplesToExport = workWithSamples ? new ArrayList<>(MgdbDao.getSamplesByIDs(sModule, materialToExport, true).values()) : MgdbDao.getSamplesForProject(sModule, projId, materialToExport);
             final Integer nAssembly = Assembly.getThreadBoundAssembly();
             if (individualOrientedExportHandler != null)
             {
