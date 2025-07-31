@@ -1442,16 +1442,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         LinkedHashMap<Comparable, Variant> varMap = new LinkedHashMap<>();
 
         String refPosPath = Assembly.getThreadBoundVariantRefPosPath();
+        Variant.Builder variantBuilder = null;
+        TreeSet<String> variantSetIDs = new TreeSet<>();
         
         // parse the cursor to create all GAVariant
         while (cursor.hasNext()) {
             Document obj = cursor.next();
             // save the Id of each variant in the cursor
             String id = (String) obj.get("_id");
-            List<String> knownAlleles = ((List<String>) obj.get(VariantData.FIELDNAME_KNOWN_ALLELES));
             
-            List<String> variantSetIDs = ((List<Document>) obj.get(VariantData.FIELDNAME_RUNS)).stream().map(doc -> module + Helper.ID_SEPARATOR + doc.get(Run.FIELDNAME_PROJECT_ID)).distinct().toList();
-            Variant.Builder variantBuilder = Variant.newBuilder().setId(Helper.createId(module, id.toString())).setVariantSetId(String.join(", ", variantSetIDs));
+            variantBuilder = Variant.newBuilder().setId(/*Helper.createId(module, */id/*.toString())*/);            
+            variantBuilder.setVariantSetId(String.join(", ", variantSetIDs));
 
             Document rp = (Document) Helper.readPossiblyNestedField(obj, refPosPath, "; ", null);
             if (rp == null)
@@ -1468,6 +1469,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 	end = start;
                 variantBuilder.setEnd(end != null ? end : 0);
             }
+            List<String> knownAlleles = ((List<String>) obj.get(VariantData.FIELDNAME_KNOWN_ALLELES));
             if (knownAlleles != null && knownAlleles.size() > 0) {
 	            variantBuilder.setReferenceBases(knownAlleles.get(0)); // reference is the first one in VCF files
 	            variantBuilder.setAlternateBases(knownAlleles.subList(1, knownAlleles.size()));
@@ -1481,8 +1483,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             infoType.add((String) obj.get(VariantData.FIELDNAME_TYPE));
             annotations.put("type", infoType);
             variantBuilder.setInfo(annotations);
-            
-            varMap.put(id, variantBuilder.build());
         }
 
         // get the VariantRunData containing annotations
@@ -1504,23 +1504,25 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         
         
         BasicDBList matchAndList = new BasicDBList();
-        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet())));
+        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, variantBuilder.getId()));
 
         
-        
+
         HashMap<Integer, List<String>> involvedProjectRuns = Helper.getRunsByProjectInSampleCollection(samples);
 //        int involvedRunCount = involvedProjectRuns.values().stream().mapToInt(b -> b.size()).sum();
 //        ArrayList<BasicDBObject> projectFilterList = new ArrayList<>();
 //        MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
 //        boolean fNotAllProjectsNeeded = Helper.estimDocCount(mongoTemplate, GenotypingProject.class) > involvedProjectRuns.size();	// if it's a multi-project DB we'd better filter on project field (less records treated, faster export)
+        ArrayList<BasicDBObject> runOrList = new ArrayList<>();
         for (int projId : involvedProjectRuns.keySet()) {
             List<String> projectInvolvedRuns = involvedProjectRuns.get(projId);
             BasicDBObject projectFilter = new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId);
             // if not all of this project's runs are involved, only match the required ones
 //            boolean fNotAllRunsNeeded = projectInvolvedRuns.size() != mongoTemplate.findDistinct(new Query(Criteria.where("_id").is(projId)), GenotypingProject.FIELDNAME_RUNS, GenotypingProject.class, String.class).size();
 //            if (fNotAllProjectsNeeded || fNotAllRunsNeeded)
-            matchAndList.add(/*fNotAllRunsNeeded ? */new BasicDBObject("$and", Arrays.asList(projectFilter, new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", projectInvolvedRuns))))/* : projectFilter*/);
+            runOrList.add(/*fNotAllRunsNeeded ? */new BasicDBObject("$and", Arrays.asList(projectFilter, new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", projectInvolvedRuns))))/* : projectFilter*/);
         }
+        matchAndList.add(new BasicDBObject("$or", runOrList));
 
         
 
@@ -1533,7 +1535,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             pipeline.add(new BasicDBObject("$sort", new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1)));  // if some VariantRunData records have gene info they will appear first, which will make that info available for building the result table
 
         HashSet<String> variantsForWhichAnnotationWasRetrieved = new HashSet<>();
-
+        varMap.put(variantBuilder.getId(), variantBuilder.build());
+        
         MongoCursor<Document> genotypingDataCursor = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(pipeline).allowDiskUse(true).iterator();
         if (!genotypingDataCursor.hasNext())
         	for (Comparable varId : varMap.keySet()) {	// create empty Call documents for all requested variants
@@ -1555,7 +1558,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             variantsForWhichAnnotationWasRetrieved.add(varId);
             TreeSet<Call> calls = new TreeSet(new AlphaNumericComparator<Call>());    // for automatic sorting
-
+            
             // for each annotation field
             for (String key : variantObj.keySet()) {
                 switch (key) {
@@ -1666,6 +1669,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             var.setCalls(new ArrayList<Call>(calls));	// add the call list
         }
 
+//        if (variantBuilder != null) {
+////          List<String> variantSetIDs = ((List<Document>) obj.get(VariantData.FIELDNAME_RUNS)).stream().map(doc -> module + Helper.ID_SEPARATOR + doc.get(Run.FIELDNAME_PROJECT_ID)).distinct().toList();
+//
+//        }
+        
 //        LOG.debug("getVariantListFromDBCursor took " + (System.currentTimeMillis() - before) / 1000f + "s for " + varMap.size() + " variants and " + samples.size() + " samples");
         return new ArrayList<Variant>(varMap.values());
     }
