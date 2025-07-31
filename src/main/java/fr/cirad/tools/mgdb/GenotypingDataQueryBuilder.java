@@ -176,7 +176,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 	        }
         
     	String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(req.getVariantSetId());
-        Integer[] projIDs = Arrays.stream(info[1].split(";")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
+        Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
         if (projIDs.length > 1)
         	throw new Exception("Querying on several projects' genotyping data is not yet supported!");
 
@@ -198,7 +198,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         for (int nGroupIndex = 0; nGroupIndex < callsetIds.size(); nGroupIndex++) {
             Collection<String> groupIndividuals = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty() ? MgdbDao.getProjectIndividuals(info[0], projIDs) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
             this.operator.set(nGroupIndex, genotypePatternToQueryMap.get(req.getGtPattern(nGroupIndex)));
-            this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProject(info[0], projIDs, groupIndividuals));
+            this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProjects(info[0], projIDs, groupIndividuals));
         }
 
         int nTotalChunkCount = (int) Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
