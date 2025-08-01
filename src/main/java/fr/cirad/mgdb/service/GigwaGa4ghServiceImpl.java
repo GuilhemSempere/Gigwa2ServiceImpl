@@ -1439,11 +1439,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public List<Variant> getVariantListFromDBCursor(String module, MongoCursor<Document> cursor, Collection<GenotypingSample> samples)
     {
 //        long before = System.currentTimeMillis();
-        LinkedHashMap<Comparable, Variant> varMap = new LinkedHashMap<>();
+        LinkedHashMap<String, Variant> varMap = new LinkedHashMap<>();
 
         String refPosPath = Assembly.getThreadBoundVariantRefPosPath();
-        Variant.Builder variantBuilder = null;
-        TreeSet<String> variantSetIDs = new TreeSet<>();
+        TreeSet<Integer> variantSetIDs = new TreeSet<>();
         
         // parse the cursor to create all GAVariant
         while (cursor.hasNext()) {
@@ -1451,8 +1450,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             // save the Id of each variant in the cursor
             String id = (String) obj.get("_id");
             
-            variantBuilder = Variant.newBuilder().setId(/*Helper.createId(module, */id/*.toString())*/);            
-            variantBuilder.setVariantSetId(String.join(", ", variantSetIDs));
+            Variant.Builder variantBuilder = Variant.newBuilder().setId(Helper.createId(module, id));            
+            variantBuilder.setVariantSetId(""); // this is temporary as we cannot build the Variant if not set
 
             Document rp = (Document) Helper.readPossiblyNestedField(obj, refPosPath, "; ", null);
             if (rp == null)
@@ -1483,6 +1482,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             infoType.add((String) obj.get(VariantData.FIELDNAME_TYPE));
             annotations.put("type", infoType);
             variantBuilder.setInfo(annotations);
+            varMap.put(variantBuilder.getId(), variantBuilder.build());
         }
 
         // get the VariantRunData containing annotations
@@ -1495,52 +1495,41 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         // get the genotype for wanted individuals/callSet only
         boolean fGotMultiSampleIndividuals = false;
         HashSet<String> involvedIndividuals = new HashSet<>();
+        HashMap<String, GenotypingSample> samplesById = new HashMap<>();
         for (GenotypingSample sample : samples){
             fields.put(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + sample.getId(), 1);
             if (!involvedIndividuals.add(sample.getIndividual()))
             	fGotMultiSampleIndividuals = true;
+            samplesById.put(sample.getId().toString(), sample);
         }
 
-        
-        
         BasicDBList matchAndList = new BasicDBList();
-        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, variantBuilder.getId()));
-
-        
+        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet().stream().map(id -> id.split(Helper.ID_SEPARATOR)[1]).toList())));
 
         HashMap<Integer, List<String>> involvedProjectRuns = Helper.getRunsByProjectInSampleCollection(samples);
-//        int involvedRunCount = involvedProjectRuns.values().stream().mapToInt(b -> b.size()).sum();
-//        ArrayList<BasicDBObject> projectFilterList = new ArrayList<>();
-//        MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
-//        boolean fNotAllProjectsNeeded = Helper.estimDocCount(mongoTemplate, GenotypingProject.class) > involvedProjectRuns.size();	// if it's a multi-project DB we'd better filter on project field (less records treated, faster export)
         ArrayList<BasicDBObject> runOrList = new ArrayList<>();
         for (int projId : involvedProjectRuns.keySet()) {
             List<String> projectInvolvedRuns = involvedProjectRuns.get(projId);
             BasicDBObject projectFilter = new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId);
-            // if not all of this project's runs are involved, only match the required ones
-//            boolean fNotAllRunsNeeded = projectInvolvedRuns.size() != mongoTemplate.findDistinct(new Query(Criteria.where("_id").is(projId)), GenotypingProject.FIELDNAME_RUNS, GenotypingProject.class, String.class).size();
-//            if (fNotAllProjectsNeeded || fNotAllRunsNeeded)
-            runOrList.add(/*fNotAllRunsNeeded ? */new BasicDBObject("$and", Arrays.asList(projectFilter, new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", projectInvolvedRuns))))/* : projectFilter*/);
+            runOrList.add(new BasicDBObject("$and", Arrays.asList(projectFilter, new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", projectInvolvedRuns)))));
         }
-        matchAndList.add(new BasicDBObject("$or", runOrList));
+        if (!runOrList.isEmpty())
+        	matchAndList.add(new BasicDBObject("$or", runOrList));
 
-        
-
-//        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, new BasicDBObject("$in", projIDs)));
-//        if (!samples.isEmpty())
-//            matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", samples.stream().map(sp -> sp.getRun()).distinct().collect(Collectors.toList()))));
         pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", matchAndList)));
         pipeline.add(new BasicDBObject("$project", fields));
         if (samples.isEmpty())    // if no genotypes are expected back then we assume we're building the result table (thus we need to include variant name & effect when available in one of the runs)
             pipeline.add(new BasicDBObject("$sort", new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1)));  // if some VariantRunData records have gene info they will appear first, which will make that info available for building the result table
 
         HashSet<String> variantsForWhichAnnotationWasRetrieved = new HashSet<>();
-        varMap.put(variantBuilder.getId(), variantBuilder.build());
         
         MongoCursor<Document> genotypingDataCursor = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(pipeline).allowDiskUse(true).iterator();
         if (!genotypingDataCursor.hasNext())
         	for (Comparable varId : varMap.keySet()) {	// create empty Call documents for all requested variants
-                Variant var = varMap.get(varId);
+                Variant var = varMap.get(Helper.createId(module, varId));
+                if (var == null /* should not happen! */|| variantsForWhichAnnotationWasRetrieved.contains(varId))
+                    continue;
+                
                 TreeSet<Call> calls = new TreeSet(new AlphaNumericComparator<Call>());    // for automatic sorting
                 Builder emptyCall = Call.newBuilder().setGenotype(new ArrayList<>());
         		for (GenotypingSample sample : samples) {
@@ -1552,14 +1541,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         else while (genotypingDataCursor.hasNext()) {
             Document variantObj = genotypingDataCursor.next();
             String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, "; ", null);
-            Variant var = varMap.get(varId);
-            if (var == null /* should not happen! */|| variantsForWhichAnnotationWasRetrieved.contains(varId))
-                continue;
-
-            variantsForWhichAnnotationWasRetrieved.add(varId);
-            TreeSet<Call> calls = new TreeSet(new AlphaNumericComparator<Call>());    // for automatic sorting
+            Variant var = varMap.get(Helper.createId(module, varId));
             
-            // for each annotation field
+            variantSetIDs.add((Integer) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, "; ", null));
+            
+            // loop on document fields
             for (String key : variantObj.keySet()) {
                 switch (key) {
                     // this goes in Call  || should not be called if sp field is not present
@@ -1567,9 +1553,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         // get genotype map
                         Map<String, Object> callMap = (Map<String, Object>) variantObj.get(key);
 
-                        // for each individual/CallSet
-                        for (GenotypingSample sample : samples) {
-                            Document callObj = (Document) callMap.get("" + sample.getId());
+                        // for each individual/CallSet present in the current document
+                        for (String spId : callMap.keySet()) {
+                            Document callObj = (Document) callMap.get(spId);
                             double[] gl;
                             List<Double> listGL = new ArrayList<>();
 
@@ -1577,8 +1563,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             Map<String, List<String>> aiCall = new HashMap<>();
                             String phaseSet = null;
 
-                            if (callObj != null)
-                            {
+                            if (callObj != null) {
                                 Map<String, Object> callAdditionalInfo = (Map<String, Object>) callObj.get("ai");
 
                                 // if field ai is present
@@ -1626,6 +1611,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 }
                             }
                             
+                            GenotypingSample sample = samplesById.get(spId);
                             if (fGotMultiSampleIndividuals)
                             	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
                             Call call = Call.newBuilder()
@@ -1636,46 +1622,68 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                     .setInfo(aiCall)
                                     .build();
 
-                            calls.add(call);
+                            var.getCalls().add(call);
+                            var.setVariantSetId(StringUtils.join(variantSetIDs.stream().map(pjId -> Helper.createId(module, pjId)).toList(), ","));
                         }
                         break;
 
                     case VariantRunData.SECTION_ADDITIONAL_INFO:
-                        Map<String, Object> additionalInfos = (Map<String, Object>) variantObj.get(key);
-                        for (String subKey : additionalInfos.keySet()) {
-
-                            if (subKey.equals("") || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ)) {
-                                // if VCF has empty field (";") do not retrieve it
-
-                                // field EFF should be stored in variantAnnotation !
-                                // stored in ai for the moment, not supported by ga4gh
-                                // ANN (vcf 4.2) is stored in variantAnnotation
-                            } else if (subKey.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE)) {
-                                List<String> listGene = (List<String>) additionalInfos.get(subKey);
-                                var.getInfo().put(subKey, listGene);
-                            } else if (subKey.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME)) {
-                                List<String> listEffect = (List<String>) additionalInfos.get(subKey);
-                                var.getInfo().put(subKey, listEffect);
-                            } else {
-
-                            }
-                        }
+                    	if (!variantsForWhichAnnotationWasRetrieved.contains(varId)) {
+	                        variantsForWhichAnnotationWasRetrieved.add(varId);
+	                        Map<String, Object> additionalInfos = (Map<String, Object>) variantObj.get(key);
+	                        for (String subKey : additionalInfos.keySet()) {
+	
+	                            if (subKey.equals("") || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ)) {
+	                                // if VCF has empty field (";") do not retrieve it
+	
+	                                // field EFF should be stored in variantAnnotation !
+	                                // stored in ai for the moment, not supported by ga4gh
+	                                // ANN (vcf 4.2) is stored in variantAnnotation
+	                            } else if (subKey.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE)) {
+	                                List<String> listGene = (List<String>) additionalInfos.get(subKey);
+	                                var.getInfo().put(subKey, listGene);
+	                            } else if (subKey.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME)) {
+	                                List<String> listEffect = (List<String>) additionalInfos.get(subKey);
+	                                var.getInfo().put(subKey, listEffect);
+	                            }
+	                        }
+                    	}
                         break;
                     default:
-                        // "_id" and "_class", do nothing
                         break;
                 }
             }
-            var.setCalls(new ArrayList<Call>(calls));	// add the call list
+            var.getCalls().sort(new AlphaNumericComparator<Call>());
         }
-
-//        if (variantBuilder != null) {
-////          List<String> variantSetIDs = ((List<Document>) obj.get(VariantData.FIELDNAME_RUNS)).stream().map(doc -> module + Helper.ID_SEPARATOR + doc.get(Run.FIELDNAME_PROJECT_ID)).distinct().toList();
-//
-//        }
+        
+        for (Variant variant : varMap.values()) {	// add empty Call objects for unencountered ones
+        	Map<String, List<GenotypingSample>> expectedCallSetIDs = samplesById.values().stream()
+        		    .collect(Collectors.groupingBy(
+        		        GenotypingSample::getIndividual,
+        		        Collectors.toList()
+        		    ));
+        	for (String addedCallSetID : variant.getCalls().stream().map(call -> call.getCallSetId().split(Helper.ID_SEPARATOR)[1]).toList())
+        		expectedCallSetIDs.remove(addedCallSetID);
+        	for (String missingCallSetID : expectedCallSetIDs.keySet()) {
+                for (GenotypingSample sample : expectedCallSetIDs.get(missingCallSetID)) {
+	                Map<String, List<String>> aiCall = new HashMap<>();
+	                if (fGotMultiSampleIndividuals)
+	                	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
+	                Call call = Call.newBuilder()
+	                        .setCallSetId(Helper.createId(module, sample.getIndividual()))
+	                        .setGenotype(new ArrayList<>())
+	                        .setGenotypeLikelihood(new ArrayList<>())
+	                        .setPhaseset(null)
+	                        .setInfo(aiCall)
+	                        .build();
+	
+	                variant.getCalls().add(call);
+                }
+        	}
+        }
         
 //        LOG.debug("getVariantListFromDBCursor took " + (System.currentTimeMillis() - before) / 1000f + "s for " + varMap.size() + " variants and " + samples.size() + " samples");
-        return new ArrayList<Variant>(varMap.values());
+        return varMap.values().stream().map(var -> (Variant) var).toList();
     }
 
     /**
@@ -1908,30 +1916,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public Variant getVariant(String id) throws AvroRemoteException {
-        return getVariantWithGenotypes(id, new ArrayList<>() /* all individuals */);
+        return getVariantWithGenotypes(id, new ArrayList<>() /* no sample genotypes returned by default */);
     }
 
-    public Variant getVariantWithGenotypes(String id, Collection<String> listInd) throws NumberFormatException, AvroRemoteException {
+    public Variant getVariantWithGenotypes(String id, Collection<GenotypingSample> samples) throws NumberFormatException, AvroRemoteException {
         String[] info = id.split(Helper.ID_SEPARATOR);
         MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
         MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", info[1])).iterator();
 
         Variant variant = null;
-        if (cursor != null && cursor.hasNext()) {
-            List<Criteria> sampleQueryCriteria = new ArrayList<>();
-            if (!listInd.isEmpty())
-                sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(listInd));
-            if (info.length > 2)	// project id may optionally be appended to variant id, to restrict samples to those involved in the project
-            	sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_PROJECT_ID).is(Integer.parseInt(info[2])));
-            if (info.length == 4)	// run id may optionally be appended to project id, to restrict samples to those involved in the run
-                sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_RUN).is(info[3]));
-            Criteria criteria = new Criteria();
-            if (!sampleQueryCriteria.isEmpty())
-            	criteria.andOperator(sampleQueryCriteria.toArray(new Criteria[sampleQueryCriteria.size()]));
-            Collection<GenotypingSample> samples = mongoTemplate.find(new Query(criteria), GenotypingSample.class);
+        if (cursor != null && cursor.hasNext())
             variant = getVariantListFromDBCursor(info[0], cursor, samples).get(0);
-            cursor.close();
-        }
+        cursor.close();
         return variant;
     }
 
