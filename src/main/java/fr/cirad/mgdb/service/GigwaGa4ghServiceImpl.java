@@ -1431,11 +1431,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * @param module
      * @param projId
      * @param cursor
-     * @param samples
+     * @param callsets
      * @return List<Variant>
      * @throws AvroRemoteException
      */
-    public List<Variant> getVariantListFromDBCursor(String module, int projId, MongoCursor<Document> cursor, Collection<GenotypingSample> samples)
+    public List<Variant> getVariantListFromDBCursor(String module, int projId, MongoCursor<Document> cursor, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets)
     {
 //        long before = System.currentTimeMillis();
         LinkedHashMap<Comparable, Variant> varMap = new LinkedHashMap<>();
@@ -1493,7 +1493,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         // get the genotype for wanted individuals/callSet only
         boolean fGotMultiSampleIndividuals = false;
         HashSet<String> involvedIndividuals = new HashSet<>();
-        for (GenotypingSample sample : samples){
+        for (fr.cirad.mgdb.model.mongo.maintypes.CallSet sample : callsets){
             fields.put(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + sample.getId(), 1);
             if (!involvedIndividuals.add(sample.getIndividual()))
             	fGotMultiSampleIndividuals = true;
@@ -1502,11 +1502,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         BasicDBList matchAndList = new BasicDBList();
         matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet())));
         matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId));
-        if (!samples.isEmpty())
-            matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", samples.stream().map(sp -> sp.getRun()).distinct().collect(Collectors.toList()))));
+        if (!callsets.isEmpty())
+            matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", callsets.stream().map(sp -> sp.getRun()).distinct().collect(Collectors.toList()))));
         pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", matchAndList)));
         pipeline.add(new BasicDBObject("$project", fields));
-        if (samples.isEmpty())    // if no genotypes are expected back then we assume we're building the result table (thus we need to include variant name & effect when available in one of then runs)
+        if (callsets.isEmpty())    // if no genotypes are expected back then we assume we're building the result table (thus we need to include variant name & effect when available in one of then runs)
             pipeline.add(new BasicDBObject("$sort", new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1)));  // if some VariantRunData records have gene info they will appear first, which will make that info available for building the result table
 
         HashSet<String> variantsForWhichAnnotationWasRetrieved = new HashSet<>();
@@ -1517,8 +1517,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 Variant var = varMap.get(varId);
                 TreeSet<Call> calls = new TreeSet(new AlphaNumericComparator<Call>());    // for automatic sorting
                 Builder emptyCall = Call.newBuilder().setGenotype(new ArrayList<>());
-        		for (GenotypingSample sample : samples) {
-        			emptyCall.setCallSetId(Helper.createId(module, projId, sample.getIndividual()));
+        		for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : callsets) {
+        			emptyCall.setCallSetId(Helper.createId(module, projId, cs.getIndividual()));
                     calls.add(emptyCall.build());
 	        	}
             	var.setCalls(new ArrayList<Call>(calls));	// add the call list
@@ -1542,8 +1542,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         Map<String, Object> callMap = (Map<String, Object>) variantObj.get(key);
 
                         // for each individual/CallSet
-                        for (GenotypingSample sample : samples) {
-                            Document callObj = (Document) callMap.get("" + sample.getId());
+                        for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : callsets) {
+                            Document callObj = (Document) callMap.get("" + cs.getId());
                             double[] gl;
                             List<Double> listGL = new ArrayList<>();
 
@@ -1601,9 +1601,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                             
                             if (fGotMultiSampleIndividuals)
-                            	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
+                            	aiCall.put("sample", Arrays.asList("" + cs.getId()));
                             Call call = Call.newBuilder()
-                                    .setCallSetId(Helper.createId(module, projId, sample.getIndividual()))
+                                    .setCallSetId(Helper.createId(module, projId, cs.getIndividual()))
                                     .setGenotype(genotype)
                                     .setGenotypeLikelihood(listGL)
                                     .setPhaseset(phaseSet)
@@ -1893,8 +1893,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(listInd));
             if (info.length == 4)	// run id may optionally be appended to variant id, to restrict samples to those involved in the run
                 sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_RUN).is(info[3]));
-            Collection<GenotypingSample> samples = mongoTemplate.find(new Query(new Criteria().andOperator(sampleQueryCriteria.toArray(new Criteria[sampleQueryCriteria.size()]))), GenotypingSample.class);
-            variant = getVariantListFromDBCursor(info[0], Integer.parseInt(info[1]), cursor, samples).get(0);
+            Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets = mongoTemplate.find(new Query(new Criteria().andOperator(sampleQueryCriteria.toArray(new Criteria[sampleQueryCriteria.size()]))), fr.cirad.mgdb.model.mongo.maintypes.CallSet.class);
+            variant = getVariantListFromDBCursor(info[0], Integer.parseInt(info[1]), cursor, callsets).get(0);
             cursor.close();
         }
         return variant;
@@ -2445,16 +2445,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (cursor != null && cursor.hasNext()) {
                 // we need to get callSet name and position in the callSet list to get corresponding genotype
                 // if we don't want to retrieve genotype, just send an empty individuals list?
-                Collection<GenotypingSample> samples = new ArrayList<>();
+                Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callSets = new ArrayList<>();
                 if (getGT) {
                     try {
-                        samples = MgdbDao.getSamplesForProject(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toList()));
+                        callSets = MgdbDao.getCallsetsForProject(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toList()));
                     } catch (ObjectNotFoundException ex) {
                         java.util.logging.Logger.getLogger(GigwaGa4ghServiceImpl.class.getName()).log(Level.SEVERE, null, ex);
                     }
                 }
 
-                List<Variant> listVar = getVariantListFromDBCursor(module, Integer.parseInt(info[1]), cursor, samples);
+                List<Variant> listVar = getVariantListFromDBCursor(module, Integer.parseInt(info[1]), cursor, callSets);
                 String nextPageToken = null;
 
                 // if there is still more result after PageSize iterations
