@@ -391,7 +391,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * (The passed reference gets modified so make sure you pass a clone to this method if you need to keep a VRD version in the calling code)
      *
      * @param initialMatch to convert from VRD style to VariantData style
-     * @param forTmpColl if true, remove project and run filters because thoses fields or not kept in temporary collections
+     * @param forTmpColl if true, remove project and run filters because those fields are not kept in temporary collections
      * @return whether or not we are working on a multiple-project DB
      */
     private boolean convertMatchStageFromVrdToVariant(BasicDBObject initialMatch, boolean forTmpColl) {
@@ -455,15 +455,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public long countVariants(MgdbSearchVariantsRequest gsvr, boolean fSelectionAlreadyExists) throws Exception {
     	String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(gsvr.getVariantSetId());
         Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
-        int projId = projIDs[0];	//FIXME!!!!!!
 
         boolean fGotTokenManager = tokenManager != null;    // if null, we are probably being invoked via unit-test
         String token = !fGotTokenManager ? Helper.convertToMD5(String.valueOf(System.currentTimeMillis())) /* create a mock up token */ : tokenManager.readToken(gsvr.getRequest());
 
         ProgressIndicator progress = ProgressIndicator.get(token);    // it may already exist (if we're being called by findVariants for example)
         if (progress == null) {
-            progress = new ProgressIndicator(token, new String[0]);
+            progress = new ProgressIndicator(token, new String[] {"Counting matching variants"});
             ProgressIndicator.registerProgressIndicator(progress);
+        }
+        else {
+            progress.addStep("Counting results");
+            progress.moveToNextStep();
         }
         String sizeProblemMsg = gsvr.shallApplyMatrixSizeLimit() ? isSearchedDatasetReasonablySized(gsvr) : null;
         if (sizeProblemMsg != null)
@@ -480,20 +483,19 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         if (count == null)
         {
             long before = System.currentTimeMillis();
-            progress.addStep("Counting matching variants");
 
             List<String> alleleCountList = gsvr.getAlleleCount().length() == 0 ? null : Arrays.asList(gsvr.getAlleleCount().split(";"));
 
-            GenotypingProject genotypingProject = mongoTemplate.findById(projId, GenotypingProject.class);
-            if (genotypingProject.getAlleleCounts().size() != 1 || genotypingProject.getAlleleCounts().iterator().next() != 2) {    // Project does not only have bi-allelic data: make sure we can apply MAF filter on selection
-                boolean fExactlyOneNumberOfAllelesSelected = alleleCountList != null && alleleCountList.size() == 1;
-                boolean fBiAllelicSelected = fExactlyOneNumberOfAllelesSelected && "2".equals(alleleCountList.get(0));
-                for (int i = 0; i < gsvr.getNumberGroups(); i++) 
-	                if (!fBiAllelicSelected && (gsvr.getMaxMaf(i) < 50 || gsvr.getMinMaf(i) > 0)) {
-	                    progress.setError("MAF is only supported on biallelic data!");
-	                    return 0l;
-                }
-            }
+            for (GenotypingProject genotypingProject : mongoTemplate.find(new Query(Criteria.where("_id").in(projIDs)), GenotypingProject.class))
+	            if (genotypingProject.getAlleleCounts().size() != 1 || genotypingProject.getAlleleCounts().iterator().next() != 2) {    // Project does not only have bi-allelic data: make sure we can apply MAF filter on selection
+	                boolean fExactlyOneNumberOfAllelesSelected = alleleCountList != null && alleleCountList.size() == 1;
+	                boolean fBiAllelicSelected = fExactlyOneNumberOfAllelesSelected && "2".equals(alleleCountList.get(0));
+	                for (int i = 0; i < gsvr.getNumberGroups(); i++) 
+		                if (!fBiAllelicSelected && (gsvr.getMaxMaf(i) < 50 || gsvr.getMinMaf(i) > 0)) {
+		                    progress.setError("MAF is only supported on biallelic data!");
+		                    return 0l;
+	                }
+	            }
 
             MongoCollection<Document> varColl = mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantData.class));
             List<Integer> filteredGroups = VariantQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsvr, false);
@@ -517,8 +519,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             {    // filter on genotyping data
                 boolean fPreFilterOnVarColl = false, fMongoOnSameServer = MongoTemplateManager.isModuleOnLocalHost(info[0]);
 
-                //in this case, there is only one variantQueryDBList (no filtering on variant ids)
-                BasicDBList variantQueryDBList = !variantDataQueries.isEmpty() ? variantDataQueries.iterator().next() : new BasicDBList();
+	            Collection<BasicDBList> variantRunDataQueries = varQueryWrapper.getVariantRunDataQueries();
+	            
+	            //in this case, there is only one variantQueryDBList (no filtering on variant ids)
+	            BasicDBList variantQueryDBList = !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList();
 
                 if (variantQueryDBList.size() > 0)
                 {
@@ -1313,8 +1317,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Override
     public String getQueryKey(MgdbSearchVariantsRequest gsvr) throws Exception {
         String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(gsvr.getVariantSetId());
-        Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
-        String queryKey = projIDs + ":" + Assembly.getThreadBoundAssembly() + ":"
+        String queryKey = info[1] + ":" + Assembly.getThreadBoundAssembly() + ":"
                         + gsvr.getSelectedVariantTypes() + ":"
                         + gsvr.getReferenceName() + ":"
                         + (gsvr.getStart() == null ? "" : gsvr.getStart()) + ":"
