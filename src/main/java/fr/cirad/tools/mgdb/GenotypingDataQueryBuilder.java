@@ -257,7 +257,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 for (int filteredGroup : filteredGroups) 
                     involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
     
-                List<String> involvedProjectRuns = Helper.getRunsByProjectInSampleCollection(involvedSamples).get(genotypingProject.getId());
+                List<String> involvedProjectRuns = MgdbDao.getProjectRunsFromSamples(sModule, genotypingProject.getId(), involvedSamples.stream().map(GenotypingSample::getId).toList());
+
                 if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
                     runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
                     fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them

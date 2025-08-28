@@ -1887,13 +1887,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         Variant variant = null;
         if (cursor != null && cursor.hasNext()) {
-            List<Criteria> sampleQueryCriteria = new ArrayList<>();
-            sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_PROJECT_ID).is(Integer.parseInt(info[1])));
-            if (!listInd.isEmpty())
-                sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(listInd));
+            List<Criteria> csQueryCriteria = new ArrayList<>();
+            csQueryCriteria.add(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_PROJECT_ID).is(Integer.parseInt(info[1])));
+            if (!listInd.isEmpty()) {
+                List<String> sampleIds = mongoTemplate.findDistinct(new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(listInd)), "_id", GenotypingSample.class, String.class);
+                if (!sampleIds.isEmpty()) {
+                    csQueryCriteria.add(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_SAMPLE).in(listInd));
+                }
+            }
             if (info.length == 4)	// run id may optionally be appended to variant id, to restrict samples to those involved in the run
-                sampleQueryCriteria.add(Criteria.where(GenotypingSample.FIELDNAME_RUN).is(info[3]));
-            Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets = mongoTemplate.find(new Query(new Criteria().andOperator(sampleQueryCriteria.toArray(new Criteria[sampleQueryCriteria.size()]))), fr.cirad.mgdb.model.mongo.maintypes.CallSet.class);
+                csQueryCriteria.add(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_RUN).is(info[3]));
+            Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets = mongoTemplate.find(new Query(new Criteria().andOperator(csQueryCriteria.toArray(new Criteria[csQueryCriteria.size()]))), fr.cirad.mgdb.model.mongo.maintypes.CallSet.class);
             variant = getVariantListFromDBCursor(info[0], Integer.parseInt(info[1]), cursor, callsets).get(0);
             cursor.close();
         }
