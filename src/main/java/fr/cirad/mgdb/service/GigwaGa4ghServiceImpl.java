@@ -247,13 +247,13 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     }
 
     @Override
-    public int getProjectPloidyLevel(String sModule, Integer[] projIDs) {
+    public List<Integer> getProjectPloidyLevel(String sModule, Integer[] projIDs) {
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         Query q = new Query();
         q.fields().include(GenotypingProject.FIELDNAME_PLOIDY_LEVEL);
            q.addCriteria(Criteria.where("_id").in(projIDs));
         GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
-        return proj.getPloidyLevel();
+        return mongoTemplate.findDistinct(GenotypingProject.FIELDNAME_PLOIDY_LEVEL, GenotypingProject.class, Integer.class);
     }
 
     @Override
@@ -989,9 +989,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //            }
 //        }.start();
 
-        String info[] = Helper.getInfoFromId(gsver.getVariantSetId(), 2);
+        String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(gsver.getVariantSetId());
         String sModule = info[0];
-        int projId = Integer.parseInt(info[1]);
+        Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
 
         long before = System.currentTimeMillis();
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
@@ -1001,11 +1001,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         Map<String, HashMap<String, Float>> annotationFieldThresholdsByPop = new HashMap<>();
         List<List<String>> callsetIds = gsver.getAllCallSetIds();
         for (int i = 0; i < callsetIds.size(); i++) {
-            individualsByPop.put(gsver.getGroupName(i), callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, new Integer[] {projId}) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+            individualsByPop.put(gsver.getGroupName(i), callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projIDs) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
             annotationFieldThresholdsByPop.put(gsver.getGroupName(i), gsver.getAnnotationFieldThresholds(i));
         }
 
-        Collection<String> individualsToExport = gsver.getExportedIndividuals().size() > 0 ? gsver.getExportedIndividuals() : MgdbDao.getProjectIndividuals(sModule, new Integer[] {projId});
+        Collection<String> individualsToExport = gsver.getExportedIndividuals().size() > 0 ? gsver.getExportedIndividuals() : MgdbDao.getProjectIndividuals(sModule, projIDs);
 
         long count = countVariants(gsver, true);
         MongoCollection<Document> tmpVarColl = MongoTemplateManager.getTemporaryVariantCollection(sModule, token, false, false, false);
@@ -1065,7 +1065,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             AbstractIndividualOrientedExportHandler individualOrientedExportHandler = AbstractIndividualOrientedExportHandler.getIndividualOrientedExportHandlers().get(gsver.getExportFormat());
             AbstractMarkerOrientedExportHandler markerOrientedExportHandler = AbstractMarkerOrientedExportHandler.getMarkerOrientedExportHandlers().get(gsver.getExportFormat());
 
-            String filename = sModule + "__project" + projId + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat().replace(".", "_") + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
+            String filename = sModule + "__project" + (projIDs.length == 1 ? "" : "s") + info[1].replaceAll(",", "&") + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat().replace(".", "_") + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
 
             LOG.info((gsver.isKeepExportOnServer() ? "On-server" : "Direct-download") + " export requested: " + processId);
 
@@ -1083,19 +1083,24 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             response.getWriter().write(exportURL);
             response.flushBuffer();
 
-            GenotypingProject project = mongoTemplate.findById(projId, GenotypingProject.class);
             Map<String, InputStream> readyToExportFiles = new HashMap<>();
             String sCitingText = appConfig.get("howToCite");
             if (sCitingText == null)
                 sCitingText = "Please cite Gigwa as follows:\nGuilhem Sempéré, Adrien Pétel, Mathieu Rouard, Julien Frouin, Yann Hueber, Fabien De Bellis, Pierre Larmande,\nGigwa v2—Extended and improved genotype investigator, GigaScience, Volume 8, Issue 5, May 2019, giz051, https://doi.org/10.1093/gigascience/giz051";
-            String projDesc = project.getDescription();
-            if (projDesc != null && projDesc.contains("HOW TO CITE"))
-                sCitingText += (sCitingText.length() > 0 ? "\n\n" : "") + "Please cite project data as follows:\n" + projDesc.substring(projDesc.indexOf("HOW TO CITE") + 11).replaceAll("\n\n*", "\n").trim();
+        	String citations = "";
+            for (GenotypingProject project : mongoTemplate.find(new Query(Criteria.where("_id").in(projIDs)), GenotypingProject.class)) {
+	            String projDesc = project.getDescription();
+	            if (projDesc != null && projDesc.contains("HOW TO CITE"))
+               		citations += projDesc.substring(projDesc.indexOf("HOW TO CITE") + 11).replaceAll("\n\n*", "\n").trim() + "\n";
+            }
+            if (!citations.isEmpty())
+            	sCitingText += (sCitingText.length() > 0 ? "\n\n" : "") + "Please cite project data as follows:\n" + citations;
+
             if (sCitingText.length() > 0)
                 readyToExportFiles.put("HOW_TO_CITE.txt", new ByteArrayInputStream(sCitingText.getBytes("UTF-8")));
 
             final OutputStream finalOS = os;
-            ArrayList<GenotypingSample> samplesToExport = MgdbDao.getSamplesForProject(sModule, projId, individualsToExport);
+            ArrayList<GenotypingSample> samplesToExport = MgdbDao.getSamplesForProjects(sModule, projIDs, individualsToExport);
             final Integer nAssembly = Assembly.getThreadBoundAssembly();
             if (individualOrientedExportHandler != null)
             {
@@ -1147,7 +1152,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     public void run() {
                     	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                         try {
-                            markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, gsver.getMetadataFields(), null);
+                            markerOrientedExportHandler.exportData(finalOS, sModule, Assembly.getThreadBoundAssembly(), AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + individualsToExport.size() + " individuals");
                                 progress.markAsComplete();
