@@ -2320,6 +2320,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         q.fields().include(GenotypingProject.FIELDNAME_NAME);
         q.fields().include(GenotypingProject.FIELDNAME_DESCRIPTION);
         q.fields().include(GenotypingProject.FIELDNAME_TECHNOLOGY);
+        q.fields().include(GenotypingProject.FIELDNAME_PLOIDY_LEVEL);
         List<GenotypingProject> listProj = MongoTemplateManager.get(module).find(q, GenotypingProject.class);
         List<VariantSet> listVariantSet = new ArrayList<>();
 
@@ -2359,6 +2360,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 vsmd.setValue(proj.getTechnology());
                 metadata.add(vsmd);
             }
+            VariantSetMetadata vsmd = new VariantSetMetadata();
+            vsmd.setKey(Constants.PLOIDY);
+            vsmd.setValue("" + proj.getPloidyLevel());
+            metadata.add(vsmd);
             VariantSet variantSet = VariantSet.newBuilder()
                 .setId(Helper.createId(module, projId))
                 .setReferenceSetId(module)
