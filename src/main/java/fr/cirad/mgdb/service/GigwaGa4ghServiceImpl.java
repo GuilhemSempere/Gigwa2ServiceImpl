@@ -1620,8 +1620,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             }
                             
                             GenotypingSample sample = samplesById.get(spId);
-                            if (fGotMultiSampleIndividuals)
-                            	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
+                           	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
                             Call call = Call.newBuilder()
                                     .setCallSetId(Helper.createId(module, sample.getIndividual()))
                                     .setGenotype(genotype)
@@ -1675,8 +1674,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	for (String missingCallSetID : expectedCallSetIDs.keySet()) {
                 for (GenotypingSample sample : expectedCallSetIDs.get(missingCallSetID)) {
 	                Map<String, List<String>> aiCall = new HashMap<>();
-	                if (fGotMultiSampleIndividuals)
-	                	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
+                	aiCall.put("sample", Arrays.asList("" + sample.getSampleName()));
 	                Call call = Call.newBuilder()
 	                        .setCallSetId(Helper.createId(module, sample.getIndividual()))
 	                        .setGenotype(new ArrayList<>())
