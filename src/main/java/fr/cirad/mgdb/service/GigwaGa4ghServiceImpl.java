@@ -1942,25 +1942,39 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         CallSet callSet = null;
 
         // get information from id
-        String[] info = Helper.getInfoFromId(id, 3);
-        if (info == null) {
-
-            // wrong number of param or wrong module name
-        } else {
-            String module = info[0];
-            int projId = Integer.parseInt(info[1]);
-            String name = info[2];
-
-            List<String> listVariantSetId = new ArrayList<>();
-            listVariantSetId.add(Helper.createId(module, info[1]));
-
-            try {
-                // check if the callSet is in the list
-                if (MgdbDao.getProjectIndividuals(module, new Integer[] {projId}).contains(name))
-                    callSet = CallSet.newBuilder().setId(id).setName(name).setVariantSetIds(listVariantSetId).setSampleId(null).build();
-            } catch (ObjectNotFoundException ex) {
-                java.util.logging.Logger.getLogger(GigwaGa4ghServiceImpl.class.getName()).log(Level.SEVERE, null, ex);
+        String[] info = Helper.getInfoFromId(id, 2);
+        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsWithAllMetadata(info[0], null, null, Arrays.asList(info[1]), null);
+        if (indMap.size() == 1) {
+        	Individual ind = indMap.get(indMap.keySet().iterator().next());
+        	CallSet.Builder csb = CallSet.newBuilder().setId(id).setName(info[1]).setSampleId(null);
+        	
+            if (!ind.getAdditionalInfo().isEmpty()) {
+                Map<String, String> addInfoMap = new HashMap<>();
+                for (String key:ind.getAdditionalInfo().keySet()) {
+                    Object value = ind.getAdditionalInfo().get(key);
+                    if (value instanceof String) {
+                        int spaces = ((String) value).length() - ((String) value).replaceAll(" ", "").length();
+                        if (spaces <= 5)
+                            addInfoMap.put(key, value.toString());
+                    }
+                }
+                csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u,v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
             }
+
+            // find out which projects the individual is involved in (so we can dset the variantSetIds field's contents)
+            HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
+        	Query q = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).is(info[1]));
+        	for (GenotypingSample sample : MongoTemplateManager.get(info[0]).find(q, GenotypingSample.class)) {
+        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sample.getIndividual());
+        		if (projectsInvolvingIndividual == null) {
+        			projectsInvolvingIndividual = new TreeSet<>();
+        			individualProjects.put(sample.getIndividual(), projectsInvolvingIndividual);
+        		}
+       			projectsInvolvingIndividual.add("" + sample.getProjectId());
+        	}
+        	
+       		csb.setVariantSetIds(individualProjects.get(csb.getId().split(Helper.ID_SEPARATOR)[1]).stream().map(pjId -> (info[0] + Helper.ID_SEPARATOR + pjId)).toList());
+       		callSet = csb.build();
         }
         return callSet;
     }
@@ -2143,7 +2157,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public SearchCallSetsResponse searchCallSets(SearchCallSetsRequest scsr) throws AvroRemoteException {
 		try {
 			String[] info = Helper.extractModuleAndProjectIDsFromVariantSetIds(scsr.getVariantSetId());
-            Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
+            Set<Integer> projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).collect(Collectors.toSet());
 
 	        GigwaSearchCallSetsRequest gscsr = (GigwaSearchCallSetsRequest) scsr;
 	        Authentication auth = tokenManager.getAuthenticationFromToken(tokenManager.readToken(gscsr.getRequest()));
@@ -2157,7 +2171,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
 	        String module = info[0];
 
-	        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsWithAllMetadata(module, auth != null && auth.getAuthorities().contains(new SimpleGrantedAuthority(IRoleDefinition.ROLE_ADMIN)) ? null : AbstractTokenManager.getUserNameFromAuthentication(auth), Arrays.asList(projIDs), null, null);
+	        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsWithAllMetadata(module, auth != null && auth.getAuthorities().contains(new SimpleGrantedAuthority(IRoleDefinition.ROLE_ADMIN)) ? null : AbstractTokenManager.getUserNameFromAuthentication(auth), projIDs, null, null);
 
 	        List<CallSet> listCallSet = new ArrayList<>();
 	        int size = indMap.size();
@@ -2187,7 +2201,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	            CallSet.Builder csb = CallSet.newBuilder().setId(Helper.createId(module, ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(null);
 
 	            if (!ind.getAdditionalInfo().isEmpty()) {
-                    Map<String, String> addInfoMap = new HashMap();
+                    Map<String, String> addInfoMap = new HashMap<>();
                     for (String key:ind.getAdditionalInfo().keySet()) {
                         Object value = ind.getAdditionalInfo().get(key);
                         if (value instanceof String) {
@@ -2201,7 +2215,27 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	            callSet = csb.build();
 	            listCallSet.add(callSet);
 	        }
-	        return SearchCallSetsResponse.newBuilder().setCallSets(listCallSet).setNextPageToken(nextPageToken).build();
+	        SearchCallSetsResponse result = SearchCallSetsResponse.newBuilder().setCallSets(listCallSet).setNextPageToken(nextPageToken).build();
+	        
+            // find out which projects each individual is REALLY involved in (so we can fix the variantSetIds field's contents)
+            HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
+        	Collection<String> indIDs = result.getCallSets().stream().map(cs -> cs.getId().split(Helper.ID_SEPARATOR)[1]).toList();
+        	Query q = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(indIDs));
+        	for (GenotypingSample sample : MongoTemplateManager.get(info[0]).find(q, GenotypingSample.class)) {
+        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sample.getIndividual());
+        		if (projectsInvolvingIndividual == null) {
+        			projectsInvolvingIndividual = new TreeSet<>();
+        			individualProjects.put(sample.getIndividual(), projectsInvolvingIndividual);
+        		}
+        		if (projIDs.contains(sample.getProjectId()))
+        			projectsInvolvingIndividual.add("" + sample.getProjectId());
+        	}
+        	
+        	if (individualProjects.values().stream().filter(projSet -> projSet.size() > 1).count() > 0)
+        		for (CallSet cs : result.getCallSets())
+            		cs.setVariantSetIds(individualProjects.get(cs.getId().split(Helper.ID_SEPARATOR)[1]).stream().map(pjId -> (info[0] + Helper.ID_SEPARATOR + pjId)).toList());
+            
+            return result;
 		} catch (Exception e) {
 			throw new AvroRemoteException(e);
 		}
