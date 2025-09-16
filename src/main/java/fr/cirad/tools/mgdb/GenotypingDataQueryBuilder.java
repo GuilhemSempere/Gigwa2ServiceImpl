@@ -39,7 +39,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-//import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
@@ -94,7 +94,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     /** Used for shuffling queried chunks */
     private List<Integer> intervalIndexList;
     
-    private List<BasicDBList> intervalQueries;
+    private List<BasicDBList> intervalQueries = null;
 
     private BasicDBList variantQueryDBList;
     
@@ -115,6 +115,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     private boolean fExcludeVariantsWithOnlyMissingData = false;
     
     private Document projectionFields = new Document();
+
+	private Integer m_assemblyId;
 
     /** The Constant genotypePatternToDescriptionMap. */
     static final private HashMap<String, String> genotypePatternToDescriptionMap = new LinkedHashMap<String, String>();
@@ -161,14 +163,16 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         this.variantQueryDBList = variantQueryDBList;
         Helper.convertIdFiltersToRunFormat(Arrays.asList(this.variantQueryDBList));
         
+    	String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(req.getVariantSetId());
+        this.m_assemblyId = Assembly.safelyGetThreadBoundAssembly(info[0]);
         for (Object orObject : variantQueryDBList)
             try {
             	List<BasicDBObject> variantFilterAndList = (List<BasicDBObject>) ((BasicDBObject)((Collection)((BasicDBObject) orObject).get("$or")).iterator().next()).get("$and");
             	if (variantFilterAndList != null)		// there can be other $or operators like {"$or": [{"ka": {"$size": 2}}]} for example
 	                for (Object variantFilter : variantFilterAndList)
-		            	if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_SEQUENCE))
+		            	if (((BasicDBObject) variantFilter).containsKey(Assembly.getVariantRefPosPath(m_assemblyId) + "." + ReferencePosition.FIELDNAME_SEQUENCE))
 		                    m_fFilteringOnSequence = true;
-		                else if (((BasicDBObject) variantFilter).containsKey(Assembly.getThreadBoundVariantRefPosPath() + "." + ReferencePosition.FIELDNAME_START_SITE))
+		                else if (((BasicDBObject) variantFilter).containsKey(Assembly.getVariantRefPosPath(m_assemblyId) + "." + ReferencePosition.FIELDNAME_START_SITE))
 		                	m_fFilteringOnStartSite = true;
 	        }
 	        catch (Exception ignored) {
@@ -176,8 +180,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 //	        	ignored.printStackTrace();
 	        }
         
-    	String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(req.getVariantSetId());
-        Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
+    	Integer[] projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toArray(Integer[]::new);
 //        if (projIDs.length > 1)
 //        	throw new Exception("Querying on several projects' genotyping data is not yet supported!");
 
@@ -213,10 +216,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         if (m_fFilteringOnSequence && m_fFilteringOnStartSite) {	// when filtering on a precise zone of the genome it's slightly quicker to chunk that given zone rather than use tagged variants
 	        Long[] minMaxFound = new Long[2];   // will be filled in by the method below
-	        Helper.findDefaultRangeMinMax(info[0], projIDs, null, null, null, gsvr.getStart(), gsvr.getEnd(), minMaxFound);
-	        this.intervalQueries = Helper.getIntervalQueries(nTotalChunkCount, null, null, minMaxFound[0], minMaxFound[1], variantQueryDBList).stream().map(dbo -> { BasicDBList l = new BasicDBList(); l.add(dbo); return l; } ).collect(Collectors.toList());
+	        if (Helper.findDefaultRangeMinMax(info[0], projIDs, null, null, null, gsvr.getStart(), gsvr.getEnd(), minMaxFound))
+	        	this.intervalQueries = Helper.getIntervalQueries(nTotalChunkCount, null, null, minMaxFound[0], minMaxFound[1], variantQueryDBList).stream().map(dbo -> { BasicDBList l = new BasicDBList(); l.add(dbo); return l; } ).collect(Collectors.toList());
         }
-        else {
+        
+        if (this.intervalQueries == null) {
         	this.intervalQueries = new ArrayList<>();
         	List<Map> taggedVariantList = mongoTemplate.findAll(Map.class, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS);
         	for (int i=0; i<nTotalChunkCount; i++) {
@@ -263,15 +267,14 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 }
             }
             
-            Integer nAssemblyId = Assembly.getThreadBoundAssembly();
-            String refPosField = nAssemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
+            String refPosField = m_assemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
             if (fAccountForMultipleRuns) {
                 groupFields = new Document();
                 Document firstContents = new Document();
-                firstContents.append(ReferencePosition.FIELDNAME_SEQUENCE, "$" + refPosField + (nAssemblyId != null ? "." + nAssemblyId : "") + "." + ReferencePosition.FIELDNAME_SEQUENCE)
-                            .append(ReferencePosition.FIELDNAME_START_SITE, "$" + refPosField + (nAssemblyId != null ? "." + nAssemblyId : "") + "." + ReferencePosition.FIELDNAME_START_SITE)
-                            .append(ReferencePosition.FIELDNAME_END_SITE, "$" + refPosField + (nAssemblyId != null ? "." + nAssemblyId : "") + "." + ReferencePosition.FIELDNAME_END_SITE);
-                groupFields.put(refPosField, new Document("$first", nAssemblyId != null ? new Document(nAssemblyId.toString(), firstContents) : firstContents));
+                firstContents.append(ReferencePosition.FIELDNAME_SEQUENCE, "$" + refPosField + (m_assemblyId != null ? "." + m_assemblyId : "") + "." + ReferencePosition.FIELDNAME_SEQUENCE)
+                            .append(ReferencePosition.FIELDNAME_START_SITE, "$" + refPosField + (m_assemblyId != null ? "." + m_assemblyId : "") + "." + ReferencePosition.FIELDNAME_START_SITE)
+                            .append(ReferencePosition.FIELDNAME_END_SITE, "$" + refPosField + (m_assemblyId != null ? "." + m_assemblyId : "") + "." + ReferencePosition.FIELDNAME_END_SITE);
+                groupFields.put(refPosField, new Document("$first", m_assemblyId != null ? new Document(m_assemblyId.toString(), firstContents) : firstContents));
                 groupFields.put(VariantData.FIELDNAME_TYPE, new Document("$first", "$" + VariantData.FIELDNAME_TYPE));
                 groupFields.put(VariantData.FIELDNAME_KNOWN_ALLELES, new Document("$first", "$" + VariantData.FIELDNAME_KNOWN_ALLELES));
             }
@@ -756,7 +759,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             pipeline.add(new BasicDBObject(new BasicDBObject("$match", new BasicDBObject("$and", annotationMatchList))));  // re-apply this here in case of multiple runs (annotations could be in a different run than the one containing wanted genotypes)
 
         if (!projectionFields.isEmpty()) {
-            projectionFields.put(Assembly.getThreadBoundVariantRefPosPath(), 1);
+            projectionFields.put(Assembly.getVariantRefPosPath(m_assemblyId), 1);
             projectionFields.put(AbstractVariantData.FIELDNAME_TYPE, 1);
             projectionFields.put(AbstractVariantData.FIELDNAME_KNOWN_ALLELES, 1);
             pipeline.add(new BasicDBObject("$project", projectionFields));
@@ -781,10 +784,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-//        if (nNextCallCount == 1) {
-//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-//            catch (Exception ignored) {}
-//        }
+        if (nNextCallCount == 1) {
+            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+            catch (Exception ignored) {}
+        }
         return pipeline;
     }
 
