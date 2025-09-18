@@ -2452,7 +2452,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callSets = new ArrayList<>();
                 if (getGT) {
                     try {
-                        callSets = MgdbDao.getCallsetsForProject(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toList()));
+                        if (workWithSamples) {
+                            callSets = MgdbDao.getCallsetsForProjectAndSamples(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toList()));
+                        } else {
+                            callSets = MgdbDao.getCallsetsForProjectAndIndividuals(module, projId, gsvr.getCallSetIds().stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toList()));
+                        }
                     } catch (ObjectNotFoundException ex) {
                         java.util.logging.Logger.getLogger(GigwaGa4ghServiceImpl.class.getName()).log(Level.SEVERE, null, ex);
                     }

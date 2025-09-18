@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
+import fr.cirad.mgdb.model.mongo.maintypes.*;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.math.util.MathUtils;
 import org.apache.log4j.Logger;
@@ -44,7 +45,6 @@ import com.mongodb.BasicDBObject;
 
 import fr.cirad.mgdb.model.mongo.maintypes.Assembly;
 import fr.cirad.mgdb.model.mongo.maintypes.GenotypingProject;
-import fr.cirad.mgdb.model.mongo.maintypes.GenotypingSample;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
 import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
@@ -81,8 +81,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     
     private HashSet<Integer> mutualDiscrim = new HashSet<>();;  // end of the query will be skipped for half of the groups mutually discriminating
     
-    /** The individual index to sample list map. */
-    private List<TreeMap<String /*individual*/, ArrayList<GenotypingSample>>> individualToSampleListMap = new ArrayList<>();
+    /** The individual or sample index to callset list map. */
+    private List<TreeMap<String /*individual*/, ArrayList<CallSet>>> individualToSampleListMap = new ArrayList<>();
         
     private int nNextCallCount = 0;
     
@@ -196,16 +196,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             this.operator.set(nGroupIndex, genotypePatternToQueryMap.get(req.getGtPattern(nGroupIndex)));
             boolean noMaterialSelected = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty();	// will be treated as "all material selected"
             if (workWithSamples) {
-                Collection<GenotypingSample> groupSamples = noMaterialSelected ? MgdbDao.getSamplesForProject(sModule, projId, null) : mongoTemplate.find(new Query(Criteria.where("_id").in(callsetIds.get(nGroupIndex).stream().map(csi -> Integer.parseInt(csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR)))).toList())), GenotypingSample.class);
-                this.individualToSampleListMap.set(nGroupIndex, groupSamples.stream().collect(Collectors.groupingBy(
-                	sample -> sample.getId().toString(),
-                    TreeMap::new,
-                    Collectors.toCollection(ArrayList::new)
-                )));
+                Collection<String> groupSamples = noMaterialSelected ? MgdbDao.getProjectSamples(sModule, projId) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
+                this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getCallsetsBySampleForProject(sModule, projId, groupSamples));
             }
             else {
                 Collection<String> groupIndividuals = noMaterialSelected ? MgdbDao.getProjectIndividuals(sModule, projId) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-                this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getSamplesByIndividualForProject(sModule, projId, groupIndividuals));
+                this.individualToSampleListMap.set(nGroupIndex, MgdbDao.getCallsetsByIndividualForProject(sModule, projId, groupIndividuals));
             }
         }
 
@@ -245,7 +241,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         fIsMultiRunProject = genotypingProject.getRuns().size() > 1;
 
-        for (TreeMap<String, ArrayList<GenotypingSample>> groupIndSamples : individualToSampleListMap)
+        for (TreeMap<String, ArrayList<CallSet>> groupIndSamples : individualToSampleListMap)
             if (groupIndSamples != null && groupIndSamples.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent()) {
                 fGotMultiSampleIndividuals = true;
                 break;
@@ -253,11 +249,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         if (!fForCounting || fIsMultiRunProject) {
             if (!individualToSampleListMap.isEmpty()) {
-                List<GenotypingSample> involvedSamples = new ArrayList<>();
+                List<String> involvedSamples = new ArrayList<>();
                 for (int filteredGroup : filteredGroups) 
-                    involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).values().stream().flatMap(List::stream).collect(Collectors.toList()));
+                    involvedSamples.addAll(individualToSampleListMap.get(filteredGroup).keySet());
     
-                List<String> involvedProjectRuns = MgdbDao.getProjectRunsFromSamples(sModule, genotypingProject.getId(), involvedSamples.stream().map(GenotypingSample::getId).toList());
+                List<String> involvedProjectRuns = MgdbDao.getProjectRunsFromSamples(sModule, genotypingProject.getId(), involvedSamples);
 
                 if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
                     runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
@@ -451,10 +447,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 List<Object> currentIndGroupGtArray = new ArrayList<>();
                 for (String ind : individualToSampleListMap.get(g).keySet()) {
                     BasicDBList individualSampleGenotypeList = new BasicDBList();
-                    List<GenotypingSample> individualSamples = individualToSampleListMap.get(g).get(ind);
+                    List<CallSet> individualSamples = individualToSampleListMap.get(g).get(ind);
                     if (individualSamples != null)
                         for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
-                            GenotypingSample individualSample = individualSamples.get(k);
+                            CallSet individualSample = individualSamples.get(k);
                             Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
                             
                             BasicDBList conditionsWhereAnnotationFieldValueIsTooLow = new BasicDBList();
