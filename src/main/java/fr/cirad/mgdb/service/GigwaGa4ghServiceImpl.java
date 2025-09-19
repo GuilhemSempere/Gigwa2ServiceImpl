@@ -471,7 +471,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             return 0;
         }
 
-        String queryKey = getQueryKey(gsvr);
+        String queryKey = getQueryKey(gsvr, workWithSamples);
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         
         Long count = CachedCount.getCachedCount(mongoTemplate, queryKey, null);
@@ -698,7 +698,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         String sModule = info[0];
-        String queryKey = getQueryKey(gsvr);
+        String queryKey = getQueryKey(gsvr, workWithSamples);
 
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         String sMongoHost = MongoTemplateManager.getModuleHost(sModule);
@@ -1310,7 +1310,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
 
     @Override
-    public String getQueryKey(MgdbSearchVariantsRequest gsvr) {
+    public String getQueryKey(MgdbSearchVariantsRequest gsvr, boolean workWithSamples) {
         String info[] = Helper.getInfoFromId(gsvr.getVariantSetId(), 2);
         int projId = Integer.parseInt(info[1]);
         String queryKey = projId + ":" + Assembly.getThreadBoundAssembly() + ":"
@@ -1320,7 +1320,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         + (gsvr.getEnd() == null ? "" : gsvr.getEnd()) + ":"
                         + gsvr.getAlleleCount() + ":"
                         + gsvr.getGeneName() + ":"
-                        + gsvr.getSelectedVariantIds() + ":";
+                        + gsvr.getSelectedVariantIds() + ":"
+                        + workWithSamples + ":";
         
         List<List<String>> callsetIds = gsvr.getAllCallSetIds();
         for (int i = 0; i < callsetIds.size(); i++) {
