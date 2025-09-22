@@ -2450,7 +2450,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             Long count = null;
             long globalCount;
             
-            int nAssemblyId = Assembly.safelyGetThreadBoundAssembly(info[0]);
+            Integer nAssemblyId = Assembly.safelyGetThreadBoundAssembly(info[0]);
             String refPosPath = Assembly.getVariantRefPosPath(nAssemblyId), pjContigsPath = Assembly.getProjectContigsPath(nAssemblyId);
 
             MongoCursor<Document> cursor = null;
