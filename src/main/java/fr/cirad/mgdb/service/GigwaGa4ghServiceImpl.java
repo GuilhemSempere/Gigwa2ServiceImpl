@@ -1585,7 +1585,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             String phaseSet = null;
 
                             if (callObj != null) {
-                                Map<String, Object> callAdditionalInfo = (Map<String, Object>) callObj.get("ai");
+                                Map<String, Object> callAdditionalInfo = (Map<String, Object>) callObj.get(SampleGenotype.SECTION_ADDITIONAL_INFO);
 
                                 // if field ai is present
                                 if (callAdditionalInfo != null)
@@ -1615,20 +1615,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                     }
 
                                 // get GT info
-                                String gt = (String) callObj.get("gt");
+                                String gt = (String) callObj.get(SampleGenotype.FIELDNAME_GENOTYPECODE);
 
-                                if (gt == null || gt.startsWith(".")) {
-                                    // if we don't know the genotype, do nothing
-                                } else {
+                                if (gt != null && !gt.startsWith(".")) {	// otherwise do nothing (missing data)
                                     String[] gen;
-                                    if (gt.contains("/")) {
+                                    if (gt.contains("/"))
                                         gen = gt.split("/");
-                                    } else {
+                                    else
                                         gen = gt.split(Helper.ID_SEPARATOR);
-                                    }
-                                    for (String gen1 : gen) {
+                                    for (String gen1 : gen)
                                         genotype.add(Integer.parseInt(gen1));
-                                    }
                                 }
                             }
                             
@@ -2234,7 +2230,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 //	            CallSet.Builder csb = CallSet.newBuilder().setId(Helper.createId(module, info[1], ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(""/*Helper.createId(module, info[1], ind.getId(), ind.getId())*/);
 //=======
 	        // create a callSet for each item in the list
-	        List<String> indList = new ArrayList() {{ addAll(indMap.keySet()); }};
+	        List<String> indList = new ArrayList<>() {{ addAll(indMap.keySet()); }};
 	        for (int i = start; i < end; i++) {
 	            final Individual ind = indMap.get(indList.get(i));
 	            CallSet.Builder csb = CallSet.newBuilder().setId(Helper.createId(module, ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(null /*FIXME : "" ? */);

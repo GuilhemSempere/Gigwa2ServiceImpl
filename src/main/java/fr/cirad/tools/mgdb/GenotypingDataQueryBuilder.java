@@ -204,11 +204,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             boolean noMaterialSelected = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty();	// will be treated as "all material selected"
             if (workWithSamples) {
                 Collection<String> groupSamples = noMaterialSelected ? MgdbDao.getProjectSamples(info[0], projIDs) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-                this.individualToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsBySampleForProject(info[0], projIDs, groupSamples));
+                this.individualToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsBySampleForProjects(info[0], projIDs, groupSamples));
             }
             else {
                 Collection<String> groupIndividuals = noMaterialSelected ? MgdbDao.getProjectIndividuals(info[0], projIDs) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-                this.individualToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsByIndividualForProject(info[0], projIDs, groupIndividuals));
+                this.individualToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsByIndividualForProjects(info[0], projIDs, groupIndividuals));
             }
         }
 
