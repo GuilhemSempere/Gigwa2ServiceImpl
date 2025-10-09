@@ -1066,7 +1066,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             AbstractIndividualOrientedExportHandler individualOrientedExportHandler = AbstractIndividualOrientedExportHandler.getIndividualOrientedExportHandlers().get(gsver.getExportFormat());
             AbstractMarkerOrientedExportHandler markerOrientedExportHandler = AbstractMarkerOrientedExportHandler.getMarkerOrientedExportHandlers().get(gsver.getExportFormat());
 
-            String filename = sModule + "__project" + (projIDs.size() == 1 ? "" : "s") + info[1].replaceAll(",", "&") + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat().replace(".", "_") + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
+            String filename = sModule + "__project" + (projIDs.size() == 1 ? "" : "s") + info[1].replaceAll(",", "-") + "__" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + "__" + count + "variants__" + gsver.getExportFormat().replace(".", "_") + "." + (individualOrientedExportHandler != null ? individualOrientedExportHandler : markerOrientedExportHandler).getExportArchiveExtension();
 
             LOG.info((gsver.isKeepExportOnServer() ? "On-server" : "Direct-download") + " export requested: " + processId);
 
@@ -1943,27 +1943,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", info[1])).iterator();
 
         Variant variant = null;
-//<<<<<<< HEAD
-        if (cursor != null && cursor.hasNext()) {
-            List<Criteria> csQueryCriteria = new ArrayList<>();
-            csQueryCriteria.add(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_PROJECT_ID).is(Integer.parseInt(info[1])));
-            if (!callsets.isEmpty()) {
-//                List<String> sampleIds = mongoTemplate.findDistinct(new Query(Criteria.where("_id").in(samples)), "_id", GenotypingSample.class, String.class);
-//                if (!sampleIds.isEmpty()) {
-                    csQueryCriteria.add(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_SAMPLE).in(callsets.stream().map(sp -> sp.getId()).toList()));
-//                }
-            }
-            if (info.length == 4)	// run id may optionally be appended to variant id, to restrict samples to those involved in the run
-                csQueryCriteria.add(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_RUN).is(info[3]));
-//            Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets = mongoTemplate.find(new Query(new Criteria().andOperator(csQueryCriteria.toArray(new Criteria[csQueryCriteria.size()]))), fr.cirad.mgdb.model.mongo.maintypes.CallSet.class);
-            variant = getVariantListFromDBCursor(info[0],/* Integer.parseInt(info[1]),*/ cursor, callsets).get(0);
-            cursor.close();
-        }
-//=======
-//        if (cursor != null && cursor.hasNext())
-//            variant = getVariantListFromDBCursor(info[0], cursor, samples).get(0);
-//        cursor.close();
-//>>>>>>> branch 'multiProj' of https://github.com/GuilhemSempere/Gigwa2ServiceImpl.git
+        if (cursor != null && cursor.hasNext())
+            variant = getVariantListFromDBCursor(info[0], cursor, callsets).get(0);
+        cursor.close();
         return variant;
     }
 
