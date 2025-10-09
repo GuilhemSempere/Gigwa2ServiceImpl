@@ -40,7 +40,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
@@ -82,8 +82,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     
     private HashSet<Integer> mutualDiscrim = new HashSet<>();;  // end of the query will be skipped for half of the groups mutually discriminating
     
-    /** The individual or sample index to callset list maps (one per group) */
-    private List<TreeMap<String /*individual*/, ArrayList<CallSet>>> individualToCallSetListMaps = new ArrayList<>();
+    /** The individual or sample to callset list maps (one per group) */
+    private List<TreeMap<String /*individual*/, ArrayList<CallSet>>> individualorSampleToCallSetListMaps = new ArrayList<>();
         
     private int nNextCallCount = 0;
     
@@ -195,7 +195,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 //	    		if (req.getMaxMaf(g) != null && req.getMaxMaf(g) < 50F || req.getMinMaf(g) != null && req.getMinMaf(g) > 0.0F)
 //	    			throw new Exception("MAF filter is only supported across multiple projects if all of them have the same ploidy!");
         this.operator = new ArrayList<>(Collections.nCopies(numberGroups, null));
-        this.individualToCallSetListMaps = new ArrayList<>(Collections.nCopies(numberGroups, new TreeMap<>()));
+        this.individualorSampleToCallSetListMaps = new ArrayList<>(Collections.nCopies(numberGroups, new TreeMap<>()));
         filteredGroups = VariantQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(req, false);
         LOG.debug("Filtering genotypes on " + filteredGroups.size() + " groups");
         List<List<String>> callsetIds = req.getAllCallSetIds();
@@ -204,11 +204,11 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             boolean noMaterialSelected = callsetIds.isEmpty() || callsetIds.get(nGroupIndex).isEmpty();	// will be treated as "all material selected"
             if (workWithSamples) {
                 Collection<String> groupSamples = noMaterialSelected ? MgdbDao.getProjectSamples(info[0], projIDs) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-                this.individualToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsBySampleForProjects(info[0], projIDs, groupSamples));
+                this.individualorSampleToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsBySampleForProjects(info[0], projIDs, groupSamples));
             }
             else {
                 Collection<String> groupIndividuals = noMaterialSelected ? MgdbDao.getProjectIndividuals(info[0], projIDs) : callsetIds.get(nGroupIndex).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet());
-                this.individualToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsByIndividualForProjects(info[0], projIDs, groupIndividuals));
+                this.individualorSampleToCallSetListMaps.set(nGroupIndex, MgdbDao.getCallsetsByIndividualForProjects(info[0], projIDs, groupIndividuals));
             }
         }
 
@@ -249,25 +249,18 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         fAccountForMultipleRuns = genotypingProjects.size() > 1 || genotypingProjects.values().iterator().next().getRuns().size() > 1;
 
-        for (TreeMap<String, ArrayList<CallSet>> groupIndSamples : individualToCallSetListMaps)
+        for (TreeMap<String, ArrayList<CallSet>> groupIndSamples : individualorSampleToCallSetListMaps)
             if (groupIndSamples != null && groupIndSamples.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent()) {
                 fGotMultiSampleIndividuals = true;
                 break;
             }
 
         if (!fForCounting || fAccountForMultipleRuns) {
-            if (!individualToCallSetListMaps.isEmpty()) {
+            if (!individualorSampleToCallSetListMaps.isEmpty()) {
                 List<String> involvedSamples = new ArrayList<>();
-                for (int filteredGroup : filteredGroups) 
-                    involvedSamples.addAll(individualToCallSetListMaps.get(filteredGroup).keySet());
-    
-//<<<<<<< HEAD
-//                List<String> involvedProjectRuns = MgdbDao.getProjectRunsFromSamples(sModule, genotypingProject.getId(), involvedSamples);
-//
-//                if (involvedProjectRuns != null && involvedProjectRuns.size() < genotypingProject.getRuns().size()) {
-//                    runsToRestrictQueryTo = involvedProjectRuns; // not all project runs are involved: adding a filter on the run field will make queries faster
-//                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
-//=======
+                for (int filteredGroup : filteredGroups)
+                	involvedSamples.addAll(individualorSampleToCallSetListMaps.get(filteredGroup).values().stream().flatMap(List::stream).map(cs -> cs.getSampleId()).distinct().toList());
+
                 if (genotypingProjects.size() == 1) {	// this optimization is too complex to handle if several projects are involved
                 	int projId = genotypingProjects.keySet().iterator().next();
                     List<String> involvedProjectRuns = Helper.getRunsByProjectFromSampleIDs(info[0], involvedSamples).get(projId);
@@ -275,7 +268,6 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 		runsToRestrictQueryTo = involvedProjectRuns;
 	                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
 	                }
-//>>>>>>> branch 'multiProj' of https://github.com/GuilhemSempere/Gigwa2ServiceImpl.git
                 }
             }
             
@@ -403,7 +395,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     nNumberOfPossibleGenotypes = Integer.MAX_VALUE;
                 }
                 
-                int nGroupSize = individualToCallSetListMaps.get(g).size();
+                int nGroupSize = individualorSampleToCallSetListMaps.get(g).size();
                 double maxMissingGenotypeCount = nGroupSize * req.getMaxMissingData(g) / 100;
                 if ("$ne".equals(cleanOperator[g]) && !fNegateMatch[g]) {
                     if (nGroupSize - maxMissingGenotypeCount > nNumberOfPossibleGenotypes) {
@@ -460,12 +452,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             for (int g : filteredGroups) {
                 boolean fMostSameSelected = "$eq".equals(cleanOperator[g]) && !fNegateMatch[g];
                 boolean fNeedGtArray = fExcludeVariantsWithOnlyMissingData || fMissingDataApplied[g] || fMafApplied[g] || fZygosityRegex[g] || fHezRatioApplied[g] || fCompareBetweenGenotypes[g] || req.isDiscriminate(g); // the only case when it's not needed is when we're only filtering on gene name or effect
-                int nGroupSize = individualToCallSetListMaps.get(g).size();
+                int nGroupSize = individualorSampleToCallSetListMaps.get(g).size();
                 
                 List<Object> currentIndGroupGtArray = new ArrayList<>();
-                for (String ind : individualToCallSetListMaps.get(g).keySet()) {
+                for (String ind : individualorSampleToCallSetListMaps.get(g).keySet()) {
                     BasicDBList individualSampleGenotypeList = new BasicDBList();
-                    List<CallSet> individualSamples = individualToCallSetListMaps.get(g).get(ind);
+                    List<CallSet> individualSamples = individualorSampleToCallSetListMaps.get(g).get(ind);
                     if (individualSamples != null)
                         for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
                             CallSet individualSample = individualSamples.get(k);
@@ -787,7 +779,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             ArrayList<BasicDBObject> orList = new ArrayList<BasicDBObject>();
             for (int filteredGroup : filteredGroups) {
                 if (req.getMaxMissingData(filteredGroup) == 100)
-                    orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m" + filteredGroup, new BasicDBObject("$lt", individualToCallSetListMaps.get(filteredGroup).size())));
+                    orList.add(new BasicDBObject(MAIN_RESULT_PROJECTION_FIELD + ".m" + filteredGroup, new BasicDBObject("$lt", individualorSampleToCallSetListMaps.get(filteredGroup).size())));
             }
             if (!orList.isEmpty())
                 finalMatchList.add(new BasicDBObject("$or", orList));
@@ -796,10 +788,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-        if (nNextCallCount == 1) {
-            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-            catch (Exception ignored) {}
-        }
+//        if (nNextCallCount == 1) {
+//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+//            catch (Exception ignored) {}
+//        }
         return pipeline;
     }
 
