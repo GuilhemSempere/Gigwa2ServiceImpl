@@ -28,7 +28,6 @@ import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.sql.SQLSyntaxErrorException;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -1101,15 +1100,15 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 readyToExportFiles.put("HOW_TO_CITE.txt", new ByteArrayInputStream(sCitingText.getBytes("UTF-8")));
 
             final OutputStream finalOS = os;
-            ArrayList<GenotypingSample> samplesToExport = workWithSamples ? new ArrayList<>(MgdbDao.getSamplesByIDs(sModule, materialToExport, true).values()) : MgdbDao.getSamplesForProjects(sModule, projIDs, materialToExport);
+            List<GenotypingSample> samplesToExport = workWithSamples ? new ArrayList<>(MgdbDao.getSamplesByIDs(sModule, materialToExport, true).values()) : MgdbDao.getSamplesForProjects(sModule, projIDs, materialToExport);
             final Integer nAssembly = Assembly.safelyGetThreadBoundAssembly(sModule);
             if (individualOrientedExportHandler != null)
             {
                 if (!progress.isAborted()) {
                     Thread exportThread = new SessionAttributeAwareThread(session) {
                         public void run() {
-                        	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             try {
+                            	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             	ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), nTempVarCount == 0 ? null : usedVarCollName, variantQueryForTargetCollection, count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, gsver.getMetadataFields(), progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
@@ -1127,6 +1126,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                 progress.setError("Error exporting data: " + e.getClass().getSimpleName() + (e.getMessage() != null ? " - " + e.getMessage() : ""));
                             }
                             finally {
+                		        Assembly.cleanupThreadAssembly();
                                 try
                                 {
                                     finalOS.close();
@@ -1152,8 +1152,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                 Thread exportThread = new SessionAttributeAwareThread(session) {
                     public void run() {
-                    	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                         try {
+                        	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
                             markerOrientedExportHandler.exportData(finalOS, sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + materialToExport.size() + (workWithSamples ? " samples" : " individuals"));
@@ -1165,6 +1165,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             progress.setError("Error exporting data: " + e.getClass().getSimpleName() + (e.getMessage() != null ? " - " + e.getMessage() : ""));
                         }
                         finally {
+            		        Assembly.cleanupThreadAssembly();
                             try
                             {
                                 finalOS.close();
@@ -1445,9 +1446,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * @param cursor
      * @param callsets
      * @return List<Variant>
+     * @throws ObjectNotFoundException 
      * @throws AvroRemoteException
      */
-    public List<Variant> getVariantListFromDBCursor(String module, /*int projId, */MongoCursor<Document> cursor, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets)
+    public List<Variant> getVariantListFromDBCursor(String module, /*int projId, */MongoCursor<Document> cursor, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets) throws ObjectNotFoundException
 //    public List<Variant> getVariantListFromDBCursor(String module, MongoCursor<Document> cursor, Collection<GenotypingSample> samples)
     {
 //        long before = System.currentTimeMillis();
@@ -1516,12 +1518,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
 
         BasicDBList matchAndList = new BasicDBList();
-//<<<<<<< HEAD
-//        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet())));
-//        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId));
-//        if (!callsets.isEmpty())
-//            matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", callsets.stream().map(sp -> sp.getRun()).distinct().collect(Collectors.toList()))));
-//=======
         matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet().stream().map(id -> id.split(Helper.ID_SEPARATOR)[1]).toList())));
 
         HashMap<Integer, List<String>> involvedProjectRuns = Helper.getRunsByProjectFromCallSetIDs(module, callsets.stream().map(cs -> cs.getId()).toList());
@@ -1534,7 +1530,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         if (!runOrList.isEmpty())
         	matchAndList.add(new BasicDBObject("$or", runOrList));
 
-//>>>>>>> branch 'multiProj' of https://github.com/GuilhemSempere/Gigwa2ServiceImpl.git
         pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", matchAndList)));
         pipeline.add(new BasicDBObject("$project", fields));
 
@@ -1542,6 +1537,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             pipeline.add(new BasicDBObject("$sort", new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1)));  // if some VariantRunData records have gene info they will appear first, which will make that info available for building the result table
 
         HashSet<String> variantsForWhichAnnotationWasRetrieved = new HashSet<>();
+        
+//        MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
         
         MongoCursor<Document> genotypingDataCursor = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).aggregate(pipeline).allowDiskUse(true).iterator();
         if (!genotypingDataCursor.hasNext())
@@ -1674,11 +1671,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
         
         for (Variant variant : varMap.values()) {	// add empty Call objects for unencountered ones
-        	Map<String, List<fr.cirad.mgdb.model.mongo.maintypes.CallSet>> expectedCallSetIDsByIndividual = callsetsById.values().stream()
-        		    .collect(Collectors.groupingBy(
-        		    	fr.cirad.mgdb.model.mongo.maintypes.CallSet::getIndividual,
-        		        Collectors.toList()
-        		    ));
+        	Map<String, List<fr.cirad.mgdb.model.mongo.maintypes.CallSet>> expectedCallSetIDsByIndividual = new HashMap<>();
+        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : callsetsById.values()) {
+        		List<fr.cirad.mgdb.model.mongo.maintypes.CallSet> indCallSets = expectedCallSetIDsByIndividual.get(cs.getIndividual());
+        		if (indCallSets == null) {
+        			indCallSets = new ArrayList<>();
+        			expectedCallSetIDsByIndividual.put(cs.getIndividual(), indCallSets);
+        		}
+        		indCallSets.add(cs);
+        	}
+
         	for (String addedIndividual : variant.getCalls().stream().map(call -> call.getCallSetId().split(Helper.ID_SEPARATOR)[1]).toList())
         		expectedCallSetIDsByIndividual.remove(addedIndividual);
         	for (String missingCallSetID : expectedCallSetIDsByIndividual.keySet()) {
@@ -1934,10 +1936,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public Variant getVariant(String id) throws AvroRemoteException {
-        return getVariantWithGenotypes(id, new ArrayList<>() /* no sample genotypes returned by default */);
+        try {
+			return getVariantWithGenotypes(id, new ArrayList<>() /* no sample genotypes returned by default */);
+		} catch (Exception e) {
+			throw new AvroRemoteException(e);
+		}
     }
 
-    public Variant getVariantWithGenotypes(String id, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets) throws NumberFormatException, AvroRemoteException {
+    public Variant getVariantWithGenotypes(String id, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets) throws NumberFormatException, AvroRemoteException, ObjectNotFoundException {
         String[] info = id.split(Helper.ID_SEPARATOR);
         MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
         MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", info[1])).iterator();
@@ -1973,17 +1979,24 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u,v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
             }
 
+            MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
+            
             // find out which projects the individual is involved in (so we can set the variantSetIds field's contents)
             HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
         	Query q = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).is(info[1]));
-        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : MongoTemplateManager.get(info[0]).find(q, fr.cirad.mgdb.model.mongo.maintypes.CallSet.class)) {
-        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(callset.getIndividual());
-        		if (projectsInvolvingIndividual == null) {
-        			projectsInvolvingIndividual = new TreeSet<>();
-        			individualProjects.put(callset.getIndividual(), projectsInvolvingIndividual);
-        		}
-       			projectsInvolvingIndividual.add("" + callset.getProjectId());
-        	}
+        	try {
+	        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : MongoTemplateManager.get(info[0]).find(q, fr.cirad.mgdb.model.mongo.maintypes.CallSet.class)) {
+	        		String sIndividual = callset.getIndividual();
+	        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sIndividual);
+	        		if (projectsInvolvingIndividual == null) {
+	        			projectsInvolvingIndividual = new TreeSet<>();
+	        			individualProjects.put(sIndividual, projectsInvolvingIndividual);
+	        		}
+	       			projectsInvolvingIndividual.add("" + callset.getProjectId());
+	        	}
+			} catch (ObjectNotFoundException e) {
+				throw new AvroRemoteException(e);
+			}
         	
        		csb.setVariantSetIds(individualProjects.get(csb.getId().split(Helper.ID_SEPARATOR)[1]).stream().map(pjId -> (info[0] + Helper.ID_SEPARATOR + pjId)).toList());
        		callSet = csb.build();
@@ -2204,33 +2217,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	            nextPageToken = Integer.toString(pageToken + 1);
 	        }
 
-//<<<<<<< HEAD
-//	        // create a callSet for each item in the list
-//	        List<String> indList = new ArrayList() {{ addAll(indMap.keySet()); }};
-//	        for (int i = start; i < end; i++) {
-//	            final Individual ind = indMap.get(indList.get(i));
-//	            CallSet.Builder csb = CallSet.newBuilder().setId(Helper.createId(module, info[1], ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(""/*Helper.createId(module, info[1], ind.getId(), ind.getId())*/);
-//=======
-	        // create a callSet for each item in the list
 	        List<String> indList = new ArrayList<>() {{ addAll(indMap.keySet()); }};
 	        for (int i = start; i < end; i++) {
 	            final Individual ind = indMap.get(indList.get(i));
 	            CallSet.Builder csb = CallSet.newBuilder().setId(Helper.createId(module, ind.getId())).setName(ind.getId()).setVariantSetIds(Arrays.asList(scsr.getVariantSetId())).setSampleId(null /*FIXME : "" ? */);
-//>>>>>>> branch 'multiProj' of https://github.com/GuilhemSempere/Gigwa2ServiceImpl.git
-
-//<<<<<<< HEAD
-//	            if (!ind.getAdditionalInfo().isEmpty()) {
-//                    Map<String, String> addInfoMap = new HashMap<>();
-//                    for (String key:ind.getAdditionalInfo().keySet()) {
-//                        Object value = ind.getAdditionalInfo().get(key);
-//                        if (value instanceof String) {
-//                            int spaces = ((String) value).length() - ((String) value).replaceAll(" ", "").length();
-//                            if (spaces <= 5)
-//                                addInfoMap.put(key, value.toString());
-//                        }
-//                    }
-//                    csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u,v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
-//=======
 	            if (!ind.getAdditionalInfo().isEmpty()) {
                     Map<String, String> addInfoMap = new HashMap<>();
                     for (String key:ind.getAdditionalInfo().keySet()) {
@@ -2239,7 +2229,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             int spaces = ((String) value).length() - ((String) value).replaceAll(" ", "").length();
                             if (spaces <= 5)
                                 addInfoMap.put(key, value.toString());
-//>>>>>>> branch 'multiProj' of https://github.com/GuilhemSempere/Gigwa2ServiceImpl.git
                         }
                     }
                     csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u,v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
@@ -2251,17 +2240,19 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	        
             // find out which projects each individual is REALLY involved in (so we can fix the variantSetIds field's contents)
             HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
-        	Collection<String> indIDs = result.getCallSets().stream().map(cs -> cs.getId().split(Helper.ID_SEPARATOR)[1]).toList();
-        	Query q = new Query(Criteria.where(fr.cirad.mgdb.model.mongo.maintypes.CallSet.FIELDNAME_INDIVIDUAL).in(indIDs));
-        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : MongoTemplateManager.get(info[0]).find(q, fr.cirad.mgdb.model.mongo.maintypes.CallSet.class)) {
-        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(callset.getIndividual());
-        		if (projectsInvolvingIndividual == null) {
-        			projectsInvolvingIndividual = new TreeSet<>();
-        			individualProjects.put(callset.getIndividual(), projectsInvolvingIndividual);
-        		}
-        		if (projIDs.contains(callset.getProjectId()))
-        			projectsInvolvingIndividual.add("" + callset.getProjectId());
-        	}
+        	Query query = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(result.getCallSets().stream().map(cs -> cs.getId().split(Helper.ID_SEPARATOR)[1]).toList()));
+        	query.fields().include(GenotypingSample.FIELDNAME_CALLSETS).include(GenotypingSample.FIELDNAME_INDIVIDUAL);
+        	for (GenotypingSample sample : MongoTemplateManager.get(info[0]).find(query, GenotypingSample.class))
+	        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : sample.getCallSets()) {
+	        		String sIndividual = callset.getIndividual();
+	        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sIndividual);
+	        		if (projectsInvolvingIndividual == null) {
+	        			projectsInvolvingIndividual = new TreeSet<>();
+	        			individualProjects.put(sIndividual, projectsInvolvingIndividual);
+	        		}
+	        		if (projIDs.contains(callset.getProjectId()))
+	        			projectsInvolvingIndividual.add("" + callset.getProjectId());
+	        	}
         	
         	if (individualProjects.values().stream().filter(projSet -> projSet.size() > 1).count() > 0)
         		for (CallSet cs : result.getCallSets())
