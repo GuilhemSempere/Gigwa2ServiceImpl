@@ -250,9 +250,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public List<Integer> getProjectPloidyLevel(String sModule, Collection<Integer> projIDs) {
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         Query q = new Query();
+        q.addCriteria(Criteria.where("_id").in(projIDs));
         q.fields().include(GenotypingProject.FIELDNAME_PLOIDY_LEVEL);
-           q.addCriteria(Criteria.where("_id").in(projIDs));
-        GenotypingProject proj = mongoTemplate.findOne(q, GenotypingProject.class);
         return mongoTemplate.findDistinct(GenotypingProject.FIELDNAME_PLOIDY_LEVEL, GenotypingProject.class, Integer.class);
     }
 
@@ -1006,7 +1005,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             annotationFieldThresholdsByPop.put(gsver.getGroupName(i), gsver.getAnnotationFieldThresholds(i));
         }
 
-        Collection materialToExport = workWithSamples ? (!gsver.getExportedIndividuals().isEmpty() ? gsver.getExportedIndividuals().stream().map(id -> Integer.parseInt(id)).toList() : MgdbDao.getSamplesForProjects(sModule, projIDs, null).stream().map(sp -> sp.getId()).toList()) : (gsver.getExportedIndividuals().isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projIDs) : gsver.getExportedIndividuals());
+        Collection materialToExport = workWithSamples ? (!gsver.getExportedIndividuals().isEmpty() ? gsver.getExportedIndividuals()/*.stream().map(id -> Integer.parseInt(id)).toList()*/ : MgdbDao.getProjectSamples(sModule, projIDs)) : (gsver.getExportedIndividuals().isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projIDs) : gsver.getExportedIndividuals());
         long count = countVariants(gsver, workWithSamples, true);
         MongoCollection<Document> tmpVarColl = MongoTemplateManager.getTemporaryVariantCollection(sModule, token, false, false, false);
         long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -1100,7 +1099,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 readyToExportFiles.put("HOW_TO_CITE.txt", new ByteArrayInputStream(sCitingText.getBytes("UTF-8")));
 
             final OutputStream finalOS = os;
-            List<GenotypingSample> samplesToExport = workWithSamples ? new ArrayList<>(MgdbDao.getSamplesByIDs(sModule, materialToExport, true).values()) : MgdbDao.getSamplesForProjects(sModule, projIDs, materialToExport);
+            @SuppressWarnings("unchecked")
+			List<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callSetsToExport = workWithSamples 
+            		? ((Collection<ArrayList<fr.cirad.mgdb.model.mongo.maintypes.CallSet>>) MgdbDao.getCallsetsBySampleForProjects(sModule, projIDs, materialToExport).values()).stream().flatMap(Collection::stream).toList()
+            		: ((Collection<ArrayList<fr.cirad.mgdb.model.mongo.maintypes.CallSet>>) MgdbDao.getCallsetsByIndividualForProjects(sModule, projIDs, materialToExport).values()).stream().flatMap(Collection::stream).toList();
             final Integer nAssembly = Assembly.safelyGetThreadBoundAssembly(sModule);
             if (individualOrientedExportHandler != null)
             {
@@ -1109,7 +1111,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         public void run() {
                             try {
                             	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
-                            	ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), nTempVarCount == 0 ? null : usedVarCollName, variantQueryForTargetCollection, count, processId, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, gsver.getMetadataFields(), progress);
+                            	ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), nTempVarCount == 0 ? null : usedVarCollName, variantQueryForTargetCollection, count, processId, individualsByPop, workWithSamples, annotationFieldThresholdsByPop, callSetsToExport, gsver.getMetadataFields(), progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
@@ -1154,7 +1156,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     public void run() {
                         try {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
-                            markerOrientedExportHandler.exportData(finalOS, sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, individualsByPop, annotationFieldThresholdsByPop, samplesToExport, gsver.getMetadataFields(), readyToExportFiles);
+                            markerOrientedExportHandler.exportData(finalOS, sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, individualsByPop, workWithSamples, annotationFieldThresholdsByPop, callSetsToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + materialToExport.size() + (workWithSamples ? " samples" : " individuals"));
                                 progress.markAsComplete();

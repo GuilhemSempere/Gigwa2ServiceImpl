@@ -40,7 +40,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-//import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
@@ -252,25 +252,25 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             }
 
         if (!fForCounting || fAccountForMultipleRuns) {
-            if (!individualOrSampleToCallSetListMaps.isEmpty()) {
-                List<String> involvedSamples = new ArrayList<>();
-                for (int filteredGroup : filteredGroups) {
-                	HashSet<String> groupSamples = new HashSet<>();
-                	for (ArrayList<CallSet> callSets : individualOrSampleToCallSetListMaps.get(filteredGroup).values())
-                		for (CallSet cs : callSets)
-                			groupSamples.add(cs.getSampleId());
-                	involvedSamples.addAll(groupSamples);
-                }
-
-                if (genotypingProjects.size() == 1) {	// this optimization is too complex to handle if several projects are involved
-                	int projId = genotypingProjects.keySet().iterator().next();
-                    List<String> involvedProjectRuns = Helper.getRunsByProjectFromSampleIDs(info[0], involvedSamples).get(projId);
-	                if (involvedProjectRuns.size() < genotypingProjects.get(projId).getRuns().size()) { // not all project runs are involved: adding a filter on the run field will make queries faster
-                		runsToRestrictQueryTo = involvedProjectRuns;
-	                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
-	                }
-                }
-            }
+//            if (!individualOrSampleToCallSetListMaps.isEmpty()) {
+//                List<String> involvedSamples = new ArrayList<>();
+//                for (int filteredGroup : filteredGroups) {
+//                	HashSet<String> groupSamples = new HashSet<>();
+//                	for (ArrayList<CallSet> callSets : individualOrSampleToCallSetListMaps.get(filteredGroup).values())
+//                		for (CallSet cs : callSets)
+//                			groupSamples.add(cs.getSampleId());
+//                	involvedSamples.addAll(groupSamples);
+//                }
+//
+//                if (genotypingProjects.size() == 1) {	// this optimization is too complex to handle if several projects are involved
+//                	int projId = genotypingProjects.keySet().iterator().next();
+//                    List<String> involvedProjectRuns = Helper.getRunsByProjectFromSampleIDs(info[0], involvedSamples).get(projId);
+//	                if (involvedProjectRuns.size() < genotypingProjects.get(projId).getRuns().size()) { // not all project runs are involved: adding a filter on the run field will make queries faster
+//                		runsToRestrictQueryTo = involvedProjectRuns;
+//	                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
+//	                }
+//                }
+//            }
             
             String refPosField = m_assemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
             if (fAccountForMultipleRuns) {
@@ -789,10 +789,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-//        if (nNextCallCount == 1) {
-//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-//            catch (Exception ignored) {}
-//        }
+        if (nNextCallCount == 1) {
+            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+            catch (Exception ignored) {}
+        }
         return pipeline;
     }
 
