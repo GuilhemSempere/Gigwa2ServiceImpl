@@ -40,11 +40,12 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 
 import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
+import fr.cirad.mgdb.model.mongo.subtypes.Callset;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
 import fr.cirad.mgdb.model.mongo.subtypes.VariantRunDataId;
@@ -79,7 +80,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     private HashSet<Integer> mutualDiscrim = new HashSet<>();;  // end of the query will be skipped for half of the groups mutually discriminating
     
     /** The individual or sample to callset list maps (one per group) */
-    private List<TreeMap<String /*individual*/, ArrayList<CallSet>>> individualOrSampleToCallSetListMaps = new ArrayList<>();
+    private List<TreeMap<String /*individual*/, ArrayList<Callset>>> individualOrSampleToCallSetListMaps = new ArrayList<>();
         
     private int nNextCallCount = 0;
     
@@ -245,32 +246,32 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         fAccountForMultipleRuns = genotypingProjects.size() > 1 || genotypingProjects.values().iterator().next().getRuns().size() > 1;
 
-        for (TreeMap<String, ArrayList<CallSet>> groupIndSamples : individualOrSampleToCallSetListMaps)
+        for (TreeMap<String, ArrayList<Callset>> groupIndSamples : individualOrSampleToCallSetListMaps)
             if (groupIndSamples != null && groupIndSamples.values().stream().filter(spList -> spList.size() > 1).findFirst().isPresent()) {
                 fGotMultiSampleIndividuals = true;
                 break;
             }
 
         if (!fForCounting || fAccountForMultipleRuns) {
-//            if (!individualOrSampleToCallSetListMaps.isEmpty()) {
-//                List<String> involvedSamples = new ArrayList<>();
-//                for (int filteredGroup : filteredGroups) {
-//                	HashSet<String> groupSamples = new HashSet<>();
-//                	for (ArrayList<CallSet> callSets : individualOrSampleToCallSetListMaps.get(filteredGroup).values())
-//                		for (CallSet cs : callSets)
-//                			groupSamples.add(cs.getSampleId());
-//                	involvedSamples.addAll(groupSamples);
-//                }
-//
-//                if (genotypingProjects.size() == 1) {	// this optimization is too complex to handle if several projects are involved
-//                	int projId = genotypingProjects.keySet().iterator().next();
-//                    List<String> involvedProjectRuns = Helper.getRunsByProjectFromSampleIDs(info[0], involvedSamples).get(projId);
-//	                if (involvedProjectRuns.size() < genotypingProjects.get(projId).getRuns().size()) { // not all project runs are involved: adding a filter on the run field will make queries faster
-//                		runsToRestrictQueryTo = involvedProjectRuns;
-//	                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
-//	                }
-//                }
-//            }
+            if (!individualOrSampleToCallSetListMaps.isEmpty()) {
+                List<String> involvedSamples = new ArrayList<>();
+                for (int filteredGroup : filteredGroups) {
+                	HashSet<String> groupSamples = new HashSet<>();
+                	for (ArrayList<Callset> callSets : individualOrSampleToCallSetListMaps.get(filteredGroup).values())
+                		for (Callset cs : callSets)
+                			groupSamples.add(cs.getSampleId());
+                	involvedSamples.addAll(groupSamples);
+                }
+
+                if (genotypingProjects.size() == 1) {	// this optimization is too complex to handle if several projects are involved
+                	int projId = genotypingProjects.keySet().iterator().next();
+                    List<String> involvedProjectRuns = Helper.getRunsByProjectFromSampleIDs(info[0], involvedSamples).get(projId);
+	                if (involvedProjectRuns.size() < genotypingProjects.get(projId).getRuns().size()) { // not all project runs are involved: adding a filter on the run field will make queries faster
+                		runsToRestrictQueryTo = involvedProjectRuns;
+	                    fExcludeVariantsWithOnlyMissingData = true;  // some variants may have no data for the selected samples, we don't want to include them
+	                }
+                }
+            }
             
             String refPosField = m_assemblyId != null ? AbstractVariantData.FIELDNAME_POSITIONS : AbstractVariantData.FIELDNAME_REFERENCE_POSITION;
             if (fAccountForMultipleRuns) {
@@ -458,10 +459,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                 List<Object> currentIndGroupGtArray = new ArrayList<>();
                 for (String ind : individualOrSampleToCallSetListMaps.get(g).keySet()) {
                     BasicDBList individualSampleGenotypeList = new BasicDBList();
-                    List<CallSet> individualSamples = individualOrSampleToCallSetListMaps.get(g).get(ind);
+                    List<Callset> individualSamples = individualOrSampleToCallSetListMaps.get(g).get(ind);
                     if (individualSamples != null)
                         for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
-                            CallSet individualSample = individualSamples.get(k);
+                            Callset individualSample = individualSamples.get(k);
                             Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
                             
                             BasicDBList conditionsWhereAnnotationFieldValueIsTooLow = new BasicDBList();
@@ -789,10 +790,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         if (finalMatchList.size() > 0)
              pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
 
-        if (nNextCallCount == 1) {
-            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
-            catch (Exception ignored) {}
-        }
+//        if (nNextCallCount == 1) {
+//            try { System.err.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pipeline)); }
+//            catch (Exception ignored) {}
+//        }
         return pipeline;
     }
 

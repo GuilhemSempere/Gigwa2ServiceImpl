@@ -132,6 +132,7 @@ import fr.cirad.mgdb.model.mongo.maintypes.Sequence;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
 import fr.cirad.mgdb.model.mongo.subtypes.AbstractVariantData;
+import fr.cirad.mgdb.model.mongo.subtypes.Callset;
 import fr.cirad.mgdb.model.mongo.subtypes.ReferencePosition;
 import fr.cirad.mgdb.model.mongo.subtypes.Run;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
@@ -1005,7 +1006,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             annotationFieldThresholdsByPop.put(gsver.getGroupName(i), gsver.getAnnotationFieldThresholds(i));
         }
 
-        Collection materialToExport = workWithSamples ? (!gsver.getExportedIndividuals().isEmpty() ? gsver.getExportedIndividuals()/*.stream().map(id -> Integer.parseInt(id)).toList()*/ : MgdbDao.getProjectSamples(sModule, projIDs)) : (gsver.getExportedIndividuals().isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projIDs) : gsver.getExportedIndividuals());
+        Collection materialToExport = workWithSamples ? (!gsver.getExportedIndividuals().isEmpty() ? gsver.getExportedIndividuals() : MgdbDao.getProjectSamples(sModule, projIDs)) : (gsver.getExportedIndividuals().isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projIDs) : gsver.getExportedIndividuals());
         long count = countVariants(gsver, workWithSamples, true);
         MongoCollection<Document> tmpVarColl = MongoTemplateManager.getTemporaryVariantCollection(sModule, token, false, false, false);
         long nTempVarCount = mongoTemplate.count(new Query(), tmpVarColl.getNamespace().getCollectionName());
@@ -1100,9 +1101,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
             final OutputStream finalOS = os;
             @SuppressWarnings("unchecked")
-			List<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callSetsToExport = workWithSamples 
-            		? ((Collection<ArrayList<fr.cirad.mgdb.model.mongo.maintypes.CallSet>>) MgdbDao.getCallsetsBySampleForProjects(sModule, projIDs, materialToExport).values()).stream().flatMap(Collection::stream).toList()
-            		: ((Collection<ArrayList<fr.cirad.mgdb.model.mongo.maintypes.CallSet>>) MgdbDao.getCallsetsByIndividualForProjects(sModule, projIDs, materialToExport).values()).stream().flatMap(Collection::stream).toList();
+			List<Callset> callSetsToExport = workWithSamples 
+            		? ((Collection<ArrayList<Callset>>) MgdbDao.getCallsetsBySampleForProjects(sModule, projIDs, materialToExport).values()).stream().flatMap(Collection::stream).toList()
+            		: ((Collection<ArrayList<Callset>>) MgdbDao.getCallsetsByIndividualForProjects(sModule, projIDs, materialToExport).values()).stream().flatMap(Collection::stream).toList();
             final Integer nAssembly = Assembly.safelyGetThreadBoundAssembly(sModule);
             if (individualOrientedExportHandler != null)
             {
@@ -1451,7 +1452,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * @throws ObjectNotFoundException 
      * @throws AvroRemoteException
      */
-    public List<Variant> getVariantListFromDBCursor(String module, /*int projId, */MongoCursor<Document> cursor, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets) throws ObjectNotFoundException
+    public List<Variant> getVariantListFromDBCursor(String module, /*int projId, */MongoCursor<Document> cursor, Collection<Callset> callsets) throws ObjectNotFoundException
 //    public List<Variant> getVariantListFromDBCursor(String module, MongoCursor<Document> cursor, Collection<GenotypingSample> samples)
     {
 //        long before = System.currentTimeMillis();
@@ -1511,8 +1512,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         // get the genotype for wanted individuals/callSet only
 //        boolean fGotMultiSampleIndividuals = false;
 //        HashSet<String> involvedIndividuals = new HashSet<>();
-        HashMap<Integer, fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsetsById = new HashMap<>();
-        for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : callsets){
+        HashMap<Integer, Callset> callsetsById = new HashMap<>();
+        for (Callset callset : callsets){
             fields.put(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + callset.getId(), 1);
 //            if (!involvedIndividuals.add(callset.getIndividual()))
 //            	fGotMultiSampleIndividuals = true;
@@ -1522,7 +1523,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         BasicDBList matchAndList = new BasicDBList();
         matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet().stream().map(id -> id.split(Helper.ID_SEPARATOR)[1]).toList())));
 
-        HashMap<Integer, List<String>> involvedProjectRuns = Helper.getRunsByProjectFromCallSetIDs(module, callsets.stream().map(cs -> cs.getId()).toList());
+        HashMap<Integer, List<String>> involvedProjectRuns = callsets.stream().collect(Collectors.groupingBy(
+    		Callset::getProjectId,
+            HashMap::new,
+            Collectors.mapping(Callset::getRun,
+                Collectors.collectingAndThen(
+                    Collectors.toSet(),  // use toSet() to ensure distinct runs
+                    set -> new ArrayList<>(set)
+                )
+            )
+        ));
         ArrayList<BasicDBObject> runOrList = new ArrayList<>();
         for (int projId : involvedProjectRuns.keySet()) {
             List<String> projectInvolvedRuns = involvedProjectRuns.get(projId);
@@ -1551,7 +1561,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 
                 TreeSet<Call> calls = new TreeSet(new AlphaNumericComparator<Call>());    // for automatic sorting
                 Builder emptyCall = Call.newBuilder().setGenotype(new ArrayList<>());
-        		for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : callsets) {
+        		for (Callset cs : callsets) {
         			emptyCall.setCallSetId(Helper.createId(module, cs.getIndividual()));
 
                     calls.add(emptyCall.build());
@@ -1573,7 +1583,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         // get genotype map
                         Map<String, Object> callMap = (Map<String, Object>) variantObj.get(key);
 
-                        for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : callsets) {
+                        for (Callset cs : callsets) {
                             Document callObj = (Document) callMap.get("" + cs.getId());
 
                             double[] gl;
@@ -1673,9 +1683,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
         
         for (Variant variant : varMap.values()) {	// add empty Call objects for unencountered ones
-        	Map<String, List<fr.cirad.mgdb.model.mongo.maintypes.CallSet>> expectedCallSetIDsByIndividual = new HashMap<>();
-        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : callsetsById.values()) {
-        		List<fr.cirad.mgdb.model.mongo.maintypes.CallSet> indCallSets = expectedCallSetIDsByIndividual.get(cs.getIndividual());
+        	Map<String, List<Callset>> expectedCallSetIDsByIndividual = new HashMap<>();
+        	for (Callset cs : callsetsById.values()) {
+        		List<Callset> indCallSets = expectedCallSetIDsByIndividual.get(cs.getIndividual());
         		if (indCallSets == null) {
         			indCallSets = new ArrayList<>();
         			expectedCallSetIDsByIndividual.put(cs.getIndividual(), indCallSets);
@@ -1686,7 +1696,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	for (String addedIndividual : variant.getCalls().stream().map(call -> call.getCallSetId().split(Helper.ID_SEPARATOR)[1]).toList())
         		expectedCallSetIDsByIndividual.remove(addedIndividual);
         	for (String missingCallSetID : expectedCallSetIDsByIndividual.keySet()) {
-        		for (fr.cirad.mgdb.model.mongo.maintypes.CallSet cs : expectedCallSetIDsByIndividual.get(missingCallSetID)) {
+        		for (Callset cs : expectedCallSetIDsByIndividual.get(missingCallSetID)) {
 	                Map<String, List<String>> aiCall = new HashMap<>();
                    	aiCall.put("sample", Arrays.asList("" + cs.getSampleId()));
                    	aiCall.put("callSet", Arrays.asList("" + cs.getId()));
@@ -1945,7 +1955,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 		}
     }
 
-    public Variant getVariantWithGenotypes(String id, Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callsets) throws NumberFormatException, AvroRemoteException, ObjectNotFoundException {
+    public Variant getVariantWithGenotypes(String id, Collection<Callset> callsets) throws NumberFormatException, AvroRemoteException, ObjectNotFoundException {
         String[] info = id.split(Helper.ID_SEPARATOR);
         MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
         MongoCursor<Document> cursor = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantData.class)).find(new BasicDBObject("_id", info[1])).iterator();
@@ -1987,7 +1997,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
         	Query q = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).is(info[1]));
         	try {
-	        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : MongoTemplateManager.get(info[0]).find(q, fr.cirad.mgdb.model.mongo.maintypes.CallSet.class)) {
+	        	for (Callset callset : MongoTemplateManager.get(info[0]).find(q, Callset.class)) {
 	        		String sIndividual = callset.getIndividual();
 	        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sIndividual);
 	        		if (projectsInvolvingIndividual == null) {
@@ -2245,7 +2255,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	Query query = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).in(result.getCallSets().stream().map(cs -> cs.getId().split(Helper.ID_SEPARATOR)[1]).toList()));
         	query.fields().include(GenotypingSample.FIELDNAME_CALLSETS).include(GenotypingSample.FIELDNAME_INDIVIDUAL);
         	for (GenotypingSample sample : MongoTemplateManager.get(info[0]).find(query, GenotypingSample.class))
-	        	for (fr.cirad.mgdb.model.mongo.maintypes.CallSet callset : sample.getCallSets()) {
+	        	for (Callset callset : sample.getCallSets()) {
 	        		String sIndividual = callset.getIndividual();
 	        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sIndividual);
 	        		if (projectsInvolvingIndividual == null) {
@@ -2545,7 +2555,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             if (cursor != null && cursor.hasNext()) {
                 // we need to get callSet name and position in the callSet list to get corresponding genotype
                 // if we don't want to retrieve genotype, just send an empty individuals list?
-                Collection<fr.cirad.mgdb.model.mongo.maintypes.CallSet> callSets = new ArrayList<>();
+                Collection<Callset> callSets = new ArrayList<>();
                 if (getGT) {
                     try {
                         if (workWithSamples) {
