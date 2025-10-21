@@ -601,7 +601,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                         // $cond to compute frequency
                         BasicDBObject condFrq = new BasicDBObject("$cond", new Object[] {
                             new BasicDBObject("$eq", new Object[] { "$$ac" + g + ".tot", 0 }),
-                            0,
+                            null,
                             new BasicDBObject("$multiply", new Object[] {
                                 new BasicDBObject("$divide", new Object[] { "$$ac" + g + ".ref", "$$ac" + g + ".tot" }),
                                 100
