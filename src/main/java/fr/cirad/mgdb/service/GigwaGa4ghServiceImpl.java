@@ -998,11 +998,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         int nGroupsToFilterGenotypingDataOn = VariantQueryBuilder.getGroupsForWhichToFilterOnGenotypingOrAnnotationData(gsver, true).size();
 
-        Map<String, Collection<String>> individualsByPop = new HashMap<>();
+        Map<String, Collection<String>> bioEntitiesByPop = new HashMap<>();
         Map<String, HashMap<String, Float>> annotationFieldThresholdsByPop = new HashMap<>();
         List<List<String>> callsetIds = gsver.getAllCallSetIds();
         for (int i = 0; i < callsetIds.size(); i++) {
-            individualsByPop.put(gsver.getGroupName(i), callsetIds.get(i).isEmpty() ? MgdbDao.getProjectIndividuals(sModule, projIDs) /* no selection means all selected */ : callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
+            bioEntitiesByPop.put(gsver.getGroupName(i), callsetIds.get(i).isEmpty() /* no selection means all selected */ ? (workWithSamples ? MgdbDao.getProjectSamples(sModule, projIDs) : MgdbDao.getProjectIndividuals(sModule, projIDs)): callsetIds.get(i).stream().map(csi -> csi.substring(1 + csi.lastIndexOf(Helper.ID_SEPARATOR))).collect(Collectors.toSet()));
             annotationFieldThresholdsByPop.put(gsver.getGroupName(i), gsver.getAnnotationFieldThresholds(i));
         }
 
@@ -1112,12 +1112,12 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                         public void run() {
                             try {
                             	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
-                            	ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), nTempVarCount == 0 ? null : usedVarCollName, variantQueryForTargetCollection, count, processId, individualsByPop, workWithSamples, annotationFieldThresholdsByPop, callSetsToExport, gsver.getMetadataFields(), progress);
+                            	ExportOutputs exportOutputs = individualOrientedExportHandler.createExportFiles(sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), nTempVarCount == 0 ? null : usedVarCollName, variantQueryForTargetCollection, count, processId, bioEntitiesByPop, workWithSamples, annotationFieldThresholdsByPop, callSetsToExport, gsver.getMetadataFields(), progress);
 
                                 for (String step : individualOrientedExportHandler.getStepList())
                                     progress.addStep(step);
                                 progress.moveToNextStep();
-                                individualOrientedExportHandler.exportData(finalOS, sModule, nAssembly, exportOutputs, true, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, IExportHandler.getIndividualPopulations(individualsByPop, true), readyToExportFiles);
+                                individualOrientedExportHandler.exportData(finalOS, sModule, nAssembly, exportOutputs, true, progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, IExportHandler.getIndividualPopulations(bioEntitiesByPop, true), readyToExportFiles);
 
                                 if (!progress.isAborted()) {
                                     LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + materialToExport.size() + " individuals");
@@ -1157,7 +1157,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     public void run() {
                         try {
                         	Assembly.setThreadAssembly(nAssembly);	// set it once and for all
-                            markerOrientedExportHandler.exportData(finalOS, sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, individualsByPop, workWithSamples, annotationFieldThresholdsByPop, callSetsToExport, gsver.getMetadataFields(), readyToExportFiles);
+                            markerOrientedExportHandler.exportData(finalOS, sModule, nAssembly, AbstractTokenManager.getUserNameFromAuthentication(auth), progress, nTempVarCount == 0 ? null : usedVarCollName, varQueryWrapper, count, null, bioEntitiesByPop, workWithSamples, annotationFieldThresholdsByPop, callSetsToExport, gsver.getMetadataFields(), readyToExportFiles);
                             if (!progress.isAborted() && progress.getError() == null) {
                                 LOG.info("exportVariants (" + gsver.getExportFormat() + ") took " + (System.currentTimeMillis() - before) / 1000d + "s to process " + count + " variants and " + materialToExport.size() + (workWithSamples ? " samples" : " individuals"));
                                 progress.markAsComplete();
