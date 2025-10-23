@@ -2962,7 +2962,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         return exportFormats;
     }
 
-    public List<Comparable> searchVariantsLookup(String module, int projectId, String lookupText) throws AvroRemoteException {
+    public List<Comparable> searchVariantsLookup(String module, List<Integer> projectIDs, String lookupText) throws AvroRemoteException {
 
         MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
 
@@ -2972,7 +2972,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         BasicDBObject whereQuery = new BasicDBObject();
         whereQuery.put("_id", Pattern.compile(".*\\Q" + lookupText + "\\E.*", Pattern.CASE_INSENSITIVE));
-        whereQuery.put(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_PROJECT_ID, projectId);
+        whereQuery.put(VariantData.FIELDNAME_RUNS + "." + Run.FIELDNAME_PROJECT_ID, new BasicDBObject("$in", projectIDs));
 
         int maxSize = 50;
         try {
@@ -3004,7 +3004,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         return values;
     }
     
-    public List<String> searchGenesLookup(String module, int projectId, String lookupText) throws AvroRemoteException {
+    public List<String> searchGenesLookup(String module, List<Integer> projectIDs, String lookupText) throws AvroRemoteException {
     	long before = System.currentTimeMillis();
     	String fieldPath = "_id";
 
@@ -3014,6 +3014,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         BasicDBObject whereQuery = new BasicDBObject();
         whereQuery.put(fieldPath, Pattern.compile(".*" + lookupText + ".*", Pattern.CASE_INSENSITIVE));
+        whereQuery.put(Run.FIELDNAME_PROJECT_ID, new BasicDBObject("$in", projectIDs));
         
         int maxSize = 50;
         try {
@@ -3024,17 +3025,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
         
         MongoCursor<Document> cursor = collection.find(whereQuery).iterator();
-
-            try {
-                while (cursor.hasNext()) {
-                    values.add((String) cursor.next().get("_id"));
-                }
-            } finally {
-               cursor.close();
+        try {
+            while (cursor.hasNext()) {
+                values.add((String) cursor.next().get("_id"));
             }
+        } finally {
+           cursor.close();
+        }
 
-            if (values.size() > maxSize)
-                return Arrays.asList("Too many results, please refine search!");
+        if (values.size() > maxSize)
+            return Arrays.asList("Too many results, please refine search!");
 
 //        DistinctIterable<String> distinctValues = collection.distinct(fieldPath, whereQuery, String.class);
 //        
