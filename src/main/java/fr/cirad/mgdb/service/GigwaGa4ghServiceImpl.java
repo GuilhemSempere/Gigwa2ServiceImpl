@@ -1452,8 +1452,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * @throws ObjectNotFoundException 
      * @throws AvroRemoteException
      */
-    public List<Variant> getVariantListFromDBCursor(String module, /*int projId, */MongoCursor<Document> cursor, Collection<Callset> callsets) throws ObjectNotFoundException
-//    public List<Variant> getVariantListFromDBCursor(String module, MongoCursor<Document> cursor, Collection<GenotypingSample> samples)
+    public List<Variant> getVariantListFromDBCursor(String module, MongoCursor<Document> cursor, Collection<Callset> callsets) throws ObjectNotFoundException
     {
 //        long before = System.currentTimeMillis();
         LinkedHashMap<String, Variant> varMap = new LinkedHashMap<>();
@@ -1991,8 +1990,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u,v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
             }
 
-            MongoTemplate mongoTemplate = MongoTemplateManager.get(info[0]);
-            
             // find out which projects the individual is involved in (so we can set the variantSetIds field's contents)
             HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
         	Query q = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).is(info[1]));
