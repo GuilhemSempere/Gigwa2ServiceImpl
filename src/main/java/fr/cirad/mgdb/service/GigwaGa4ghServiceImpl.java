@@ -1973,7 +1973,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
         // get information from id
         String[] info = Helper.getInfoFromId(id, 2);
-        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsWithAllMetadata(info[0], null, null, Arrays.asList(info[1]), null);
+        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsForUser(info[0], null, null, Arrays.asList(info[1]), null);
         if (indMap.size() == 1) {
         	Individual ind = indMap.get(indMap.keySet().iterator().next());
         	CallSet.Builder csb = CallSet.newBuilder().setId(id).setName(info[1]).setSampleId(null);
@@ -2206,7 +2206,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
 	        String module = info[0];
 
-	        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsWithAllMetadata(module, auth != null && auth.getAuthorities().contains(new SimpleGrantedAuthority(IRoleDefinition.ROLE_ADMIN)) ? null : AbstractTokenManager.getUserNameFromAuthentication(auth), projIDs, null, null);
+	        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsForUser(module, auth != null && auth.getAuthorities().contains(new SimpleGrantedAuthority(IRoleDefinition.ROLE_ADMIN)) ? null : AbstractTokenManager.getUserNameFromAuthentication(auth), projIDs, null, null);
 
 	        List<CallSet> listCallSet = new ArrayList<>();
 	        int size = indMap.size();
