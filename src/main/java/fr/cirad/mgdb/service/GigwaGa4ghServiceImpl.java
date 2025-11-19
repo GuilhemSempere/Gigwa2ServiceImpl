@@ -118,6 +118,7 @@ import com.mongodb.client.model.Aggregates;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
+import fr.cirad.mgdb.exporting.individualoriented.PCAExportHandler;
 import fr.cirad.mgdb.exporting.markeroriented.AbstractMarkerOrientedExportHandler;
 import fr.cirad.mgdb.exporting.tools.ExportManager.ExportOutputs;
 import fr.cirad.mgdb.importing.SequenceImport;
@@ -1144,9 +1145,17 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             }
             else if (markerOrientedExportHandler != null)
             {
-                for (String step : markerOrientedExportHandler.getStepList()) {
+            	if (markerOrientedExportHandler instanceof PCAExportHandler) {
+            		Long maxMatrixSize = appConfig.getLong("maxPcaMatrixSize");
+            		if (maxMatrixSize != null) {
+	                    long actualMatrixSize = (long) materialToExport.size() * count;
+	                    if (actualMatrixSize > maxMatrixSize)
+	                        throw new IOException("Matrix size (" + actualMatrixSize + ") too large. Maximum allowed is " + maxMatrixSize);
+            		}
+            	}
+
+                for (String step : markerOrientedExportHandler.getStepList())
                     progress.addStep(step);
-                }
                 progress.moveToNextStep();    // done with identifying variants
 
                 String contentType = markerOrientedExportHandler.getExportContentType();
