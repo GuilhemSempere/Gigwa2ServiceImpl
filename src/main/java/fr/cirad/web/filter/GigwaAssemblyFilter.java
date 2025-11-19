@@ -57,19 +57,22 @@ public class GigwaAssemblyFilter implements javax.servlet.Filter {
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain fc) throws IOException, ServletException
 	{
-		if (request instanceof HttpServletRequest)
-		{
-			HttpServletRequest req = (HttpServletRequest) request;
-			try {
-		        String assembly = req.getHeader("assembly");
-        		Assembly.setThreadAssembly(assembly == null ? null : Integer.parseInt(assembly));
-			}
-			catch (NumberFormatException ignored) {
-				Assembly.setThreadAssembly(null);
-			}
-		}
-
-		fc.doFilter(request, response);
+	    if (request instanceof HttpServletRequest)
+	    {
+	        HttpServletRequest req = (HttpServletRequest) request;
+	        try {
+	            String assembly = req.getHeader("assembly");
+	            Assembly.setThreadAssembly(assembly == null ? null : Integer.parseInt(assembly));
+	            fc.doFilter(request, response);
+	        } catch (NumberFormatException ignored) {
+	            Assembly.setThreadAssembly(null);
+	            fc.doFilter(request, response);
+	        } finally {
+	            Assembly.cleanupThreadAssembly();
+	        }
+	    } else {
+	        fc.doFilter(request, response);
+	    }
 	}
 
 	/* (non-Javadoc)
