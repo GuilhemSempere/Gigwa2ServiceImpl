@@ -1146,7 +1146,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             else if (markerOrientedExportHandler != null)
             {
             	if (markerOrientedExportHandler instanceof PCAExportHandler) {
-            		Long maxMatrixSize = appConfig.getLong("maxPcaMatrixSize");
+            		Long maxMatrixSize = appConfig.getLong("maxPcaMatrixSize", (long) 1E9);
             		if (maxMatrixSize != null) {
 	                    long actualMatrixSize = (long) materialToExport.size() * count;
 	                    if (actualMatrixSize > maxMatrixSize)
