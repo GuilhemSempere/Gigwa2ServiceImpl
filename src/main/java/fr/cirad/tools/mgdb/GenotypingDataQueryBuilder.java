@@ -217,8 +217,10 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         if (m_fFilteringOnSequence && m_fFilteringOnStartSite) {	// when filtering on a precise zone of the genome it's slightly quicker to chunk that given zone rather than use tagged variants
 	        Long[] minMaxFound = new Long[2];   // will be filled in by the method below
-	        if (Helper.findDefaultRangeMinMax(info[0], projIDs, null, null, null, gsvr.getStart(), gsvr.getEnd(), minMaxFound))
-	        	this.intervalQueries = Helper.getIntervalQueries(nTotalChunkCount, null, null, minMaxFound[0], minMaxFound[1], variantQueryDBList).stream().map(dbo -> { BasicDBList l = new BasicDBList(); l.add(dbo); return l; } ).collect(Collectors.toList());
+	        List<String> variantTypes = Arrays.asList(gsvr.getSelectedVariantTypes().split(";"));
+	        List<String> sequences = Arrays.asList(gsvr.getReferenceName().split(";"));
+	        if (Helper.findDefaultRangeMinMax(info[0], projIDs, null, variantTypes, sequences, gsvr.getStart(), gsvr.getEnd(), minMaxFound))
+	        	this.intervalQueries = Helper.getIntervalQueries(nTotalChunkCount, sequences, variantTypes, minMaxFound[0], minMaxFound[1], variantQueryDBList).stream().map(dbo -> { BasicDBList l = new BasicDBList(); l.add(dbo); return l; } ).collect(Collectors.toList());
         }
         
         if (this.intervalQueries == null) {
@@ -462,8 +464,8 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                     List<Callset> individualSamples = individualOrSampleToCallSetListMaps.get(g).get(ind);
                     if (individualSamples != null)
                         for (int k=0; k<individualSamples.size(); k++) {    // this loop is executed only once for single-run projects
-                            Callset individualSample = individualSamples.get(k);
-                            Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
+                            Callset individualCallset = individualSamples.get(k);
+                            Object fullPathToGT = "$" + VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualCallset.getId() + "." + SampleGenotype.FIELDNAME_GENOTYPECODE;
                             
                             BasicDBList conditionsWhereAnnotationFieldValueIsTooLow = new BasicDBList();
                             if (req.getAnnotationFieldThresholds(g) != null)
@@ -472,17 +474,17 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
                                     if (threshold == 0)
                                         continue;
         
-                                    String pathToAnnotationField = VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualSample.getId() + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + annotation;
+                                    String pathToAnnotationField = VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + individualCallset.getId() + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + annotation;
                 
                                     BasicDBObject qualTooLow = new BasicDBObject("$lt", Arrays.asList("$" + pathToAnnotationField, threshold));
                                     conditionsWhereAnnotationFieldValueIsTooLow.add(qualTooLow);
                                 }
                             
                             if (fNeedGtArray && fAccountForMultipleRuns)
-                                groupFields.put(SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId(), new BasicDBObject("$addToSet", conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT));
+                                groupFields.put(SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualCallset.getId(), new BasicDBObject("$addToSet", conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT));
                             
                             if (fAccountForMultipleRuns || fGotMultiSampleIndividuals)
-                                individualSampleGenotypeList.add(!fAccountForMultipleRuns ? (conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT) : new BasicDBObject("$arrayElemAt", Arrays.asList(new BasicDBObject("$filter", new BasicDBObject("input", "$" + SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualSample.getId()).append("as", "g").append("cond", new BasicDBObject("$ne", Arrays.asList("$$g", null)))), 0)));
+                                individualSampleGenotypeList.add(!fAccountForMultipleRuns ? (conditionsWhereAnnotationFieldValueIsTooLow.size() > 0 ? new BasicDBObject("$cond", new Object[] {new BasicDBObject("$or", conditionsWhereAnnotationFieldValueIsTooLow), null, fullPathToGT}) : fullPathToGT) : new BasicDBObject("$arrayElemAt", Arrays.asList(new BasicDBObject("$filter", new BasicDBObject("input", "$" + SampleGenotype.FIELDNAME_GENOTYPECODE + "_" + individualCallset.getId()).append("as", "g").append("cond", new BasicDBObject("$ne", Arrays.asList("$$g", null)))), 0)));
 
                             if (k > 0)
                                 continue;    // the remaining code in this loop must only be executed once
