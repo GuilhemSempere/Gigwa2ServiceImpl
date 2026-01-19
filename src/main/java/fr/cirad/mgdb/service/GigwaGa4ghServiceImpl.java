@@ -118,6 +118,7 @@ import com.mongodb.client.model.Aggregates;
 
 import fr.cirad.mgdb.exporting.IExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.AbstractIndividualOrientedExportHandler;
+import fr.cirad.mgdb.exporting.individualoriented.AlleleSharingDistanceExportHandler;
 import fr.cirad.mgdb.exporting.individualoriented.PCAExportHandler;
 import fr.cirad.mgdb.exporting.markeroriented.AbstractMarkerOrientedExportHandler;
 import fr.cirad.mgdb.exporting.tools.ExportManager.ExportOutputs;
@@ -1108,6 +1109,15 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             final Integer nAssembly = Assembly.safelyGetThreadBoundAssembly(sModule);
             if (individualOrientedExportHandler != null)
             {
+            	if (markerOrientedExportHandler instanceof AlleleSharingDistanceExportHandler) {
+            		Long maxMatrixSize = appConfig.getLong("maxDistanceMatrixSize", (long) 1E9);
+            		if (maxMatrixSize != null) {
+	                    long actualMatrixSize = (long) materialToExport.size() * count;
+	                    if (actualMatrixSize > maxMatrixSize)
+	                        throw new IOException("Matrix size (" + actualMatrixSize + ") too large. Maximum allowed is " + maxMatrixSize);
+            		}
+            	}
+
                 if (!progress.isAborted()) {
                     Thread exportThread = new SessionAttributeAwareThread(session) {
                         public void run() {
@@ -1147,6 +1157,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             {
             	if (markerOrientedExportHandler instanceof PCAExportHandler) {
             		Long maxMatrixSize = appConfig.getLong("maxPcaMatrixSize", (long) 1E9);
+            		if (maxMatrixSize != null) {
+	                    long actualMatrixSize = (long) materialToExport.size() * count;
+	                    if (actualMatrixSize > maxMatrixSize)
+	                        throw new IOException("Matrix size (" + actualMatrixSize + ") too large. Maximum allowed is " + maxMatrixSize);
+            		}
+            	}
+            	else if (markerOrientedExportHandler instanceof AlleleSharingDistanceExportHandler) {
+            		Long maxMatrixSize = appConfig.getLong("maxDistanceMatrixSize", (long) 1E9);
             		if (maxMatrixSize != null) {
 	                    long actualMatrixSize = (long) materialToExport.size() * count;
 	                    if (actualMatrixSize > maxMatrixSize)
