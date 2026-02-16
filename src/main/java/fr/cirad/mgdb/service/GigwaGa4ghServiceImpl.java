@@ -2934,7 +2934,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             for (String key : variantAnnotationObj.keySet())
                 // do not store EFF_ge / EFF_nm / EFF / ANN / CSW
                 if (!key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE) && !key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_EFF) && !key.equals(""))
-                    metadata.put(key, variantAnnotationObj.get(key).toString());
+                    metadata.put(key, Helper.nullToEmptyString(variantAnnotationObj.get(key)));
             additionalInfo.put(Constants.METADATA_HEADER, new ArrayList<String>(metadata.keySet()));
             additionalInfo.put(Constants.METADATA_VALUE_LIST, new ArrayList<String>(metadata.values()));
             variantAnnotationBuilder.setInfo(additionalInfo);
