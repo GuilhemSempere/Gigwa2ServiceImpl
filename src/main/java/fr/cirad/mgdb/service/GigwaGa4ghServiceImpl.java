@@ -1274,48 +1274,56 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     
     static public void cleanupExpiredExportData(ServletContext sc) throws IOException {
         Map<String, Long> folderToDelayMap = new LinkedHashMap<>() {{
-        	put(TMP_OUTPUT_DDL_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
-        	put(TMP_OUTPUT_FOLDER, EXPORT_EXPIRATION_DELAY_MILLIS);
-        	put(TMP_OUTPUT_EXTRACTION_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
+            put(TMP_OUTPUT_DDL_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
+            put(TMP_OUTPUT_FOLDER, EXPORT_EXPIRATION_DELAY_MILLIS);
+            put(TMP_OUTPUT_EXTRACTION_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
         }};
-        
-        long nowMillis = new Date().getTime();
+
+        long nowMillis = System.currentTimeMillis();
         for (Entry<String, Long> entry : folderToDelayMap.entrySet()) {
             File filterOutputLocation = new File(sc.getRealPath(FRONTEND_URL + File.separator + entry.getKey()));
-            if (filterOutputLocation.exists() && filterOutputLocation.isDirectory()) {
-            	for (File userFolder : filterOutputLocation.listFiles())
-            		if (userFolder.isDirectory()) {
-                    	for (File processFolder : userFolder.listFiles())
-                    		if (processFolder.isDirectory()) {
-                    			if (nowMillis - processFolder.lastModified() > entry.getValue()) {
-                					FileSystemUtils.deleteRecursively(processFolder);
-//                					System.err.println("deleting expired folder: " + processFolder.getAbsolutePath());
-                    			}
-                    			else {
-	                    			for (File exportFileOrFolder : processFolder.listFiles()) {
-	                    				if (nowMillis - exportFileOrFolder.lastModified() > entry.getValue()) {
-		                    				if (exportFileOrFolder.isDirectory()) {
-		                    					FileSystemUtils.deleteRecursively(exportFileOrFolder);
-//		                    					System.err.println("deleting expired folder: " + exportFileOrFolder.getAbsolutePath());
-		                    				}
-		                    				else {
-		                    					exportFileOrFolder.delete();
-//		                    					System.err.println("deleting expired file: " + exportFileOrFolder.getAbsolutePath());
-		                    				}
-	                    				}
-	                    			}
-	                    			if (processFolder.listFiles().length == 0) {
-	                					FileSystemUtils.deleteRecursively(processFolder);
-//	                					System.err.println("deleting empty folder: " + processFolder.getAbsolutePath());
-	                    			}
-                    			}
-                    		}
 
-            			if (userFolder.listFiles().length == 0 && !TMP_OUTPUT_EXTRACTION_FOLDER.equals(entry.getKey()) /* avoid interfering with ongoing exports */) {
-        					FileSystemUtils.deleteRecursively(userFolder);
-//        					System.err.println("deleting empty folder: " + userFolder.getAbsolutePath());
-            			}
-            		}
+            if (!filterOutputLocation.exists() || !filterOutputLocation.isDirectory())
+                continue;
+
+            for (File userFolder : filterOutputLocation.listFiles()) {
+                if (!userFolder.isDirectory())
+                    continue;
+
+                for (File processFolder : userFolder.listFiles()) {
+                    if (!processFolder.isDirectory())
+                        continue;
+
+                    long delay = entry.getValue();
+                    File[] contents = processFolder.listFiles();
+                    boolean shouldDeleteProcessFolder = false;
+                    if (contents == null || contents.length == 0) {
+                    	if (nowMillis - processFolder.lastModified() > delay)
+                    		shouldDeleteProcessFolder = true;
+                    }
+                    else {
+                        boolean allExpired = true;
+                        for (File f : contents)
+                            if (nowMillis - f.lastModified() <= delay) {
+                                allExpired = false;
+                                break;
+                            }
+                        shouldDeleteProcessFolder = allExpired;
+                    }
+
+                    if (shouldDeleteProcessFolder) {
+                        FileSystemUtils.deleteRecursively(processFolder);
+//                        System.err.println("deleting expired or empty process folder: " + processFolder.getAbsolutePath());
+                    }
+                }
+
+                if (!TMP_OUTPUT_EXTRACTION_FOLDER.equals(entry.getKey())) {
+                    File[] remaining = userFolder.listFiles();
+                    if (remaining != null && remaining.length == 0) {
+                        FileSystemUtils.deleteRecursively(userFolder);
+//                        System.err.println("deleting empty user folder: " + userFolder.getAbsolutePath());
+                    }
+                }
             }
         }
     }
@@ -1627,7 +1635,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                                     for (String aiKey : callAdditionalInfo.keySet()) {
                                         if (aiKey.equals(VCFConstants.GENOTYPE_PL_KEY))
                                         {
-                                            gl = GenotypeLikelihoods.fromPLField(callAdditionalInfo.get(aiKey).toString()).getAsVector();
+                                            gl = GenotypeLikelihoods.fromPLField(Helper.nullToEmptyString(callAdditionalInfo.get(aiKey))).getAsVector();
                                             for (int h = 0; h < gl.length; h++)
                                                 listGL.add(gl[h]);
                                         }
@@ -1638,20 +1646,19 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                                             case VCFConstants.PHASE_SET_KEY:
                                             case VariantData.GT_FIELD_PHASED_ID:
-                                                phaseSet = callAdditionalInfo.get(aiKey).toString();
+                                                phaseSet = Helper.nullToEmptyString(callAdditionalInfo.get(aiKey));
                                                 break;
 
                                             default:
                                             	Object val = callAdditionalInfo.get(aiKey);
                                             	if (val != null)
-	                                                aiCall.put(aiKey, Arrays.asList(val.toString()));
+	                                                aiCall.put(aiKey, Arrays.asList(Helper.nullToEmptyString(val)));
                                                 break;
                                         }
                                     }
 
                                 // get GT info
                                 String gt = (String) callObj.get(SampleGenotype.FIELDNAME_GENOTYPECODE);
-
                                 if (gt != null && !gt.startsWith(".")) {	// otherwise do nothing (missing data)
                                     String[] gen;
                                     if (gt.contains("/"))
@@ -2934,7 +2941,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             for (String key : variantAnnotationObj.keySet())
                 // do not store EFF_ge / EFF_nm / EFF / ANN / CSW
                 if (!key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE) && !key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_EFF) && !key.equals(""))
-                    metadata.put(key, variantAnnotationObj.get(key).toString());
+                    metadata.put(key, Helper.nullToEmptyString(variantAnnotationObj.get(key)));
             additionalInfo.put(Constants.METADATA_HEADER, new ArrayList<String>(metadata.keySet()));
             additionalInfo.put(Constants.METADATA_VALUE_LIST, new ArrayList<String>(metadata.values()));
             variantAnnotationBuilder.setInfo(additionalInfo);
