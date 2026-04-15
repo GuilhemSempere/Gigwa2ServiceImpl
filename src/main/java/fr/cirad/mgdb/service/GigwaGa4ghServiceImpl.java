@@ -255,18 +255,45 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         /* This may be more efficient by looking at the VCF header instead */
         TreeSet<String> result = new TreeSet<>();
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
-        Query q = new Query(Criteria.where("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID).in(projIDs));
+        Query q = new Query();
         q.limit(3);
-        q.fields().include(VariantRunData.FIELDNAME_SAMPLEGENOTYPES);
+        q.fields().include("ai");
         Iterator<VariantRunData> it = mongoTemplate.find(q, VariantRunData.class).iterator();
-        while (it.hasNext())
-        {
+
+        while (it.hasNext()) {
             VariantRunData vrd = it.next();
-            Collection<SampleGenotype> spGTs = vrd.getSampleGenotypes().size() > 100 ? new ArrayList<>(vrd.getSampleGenotypes().values()).subList(0,  100) : vrd.getSampleGenotypes().values();
-            for (HashMap<String, Object> annotationMap : spGTs.stream().map(sg -> sg.getAdditionalInfo()).collect(Collectors.toList()))
-                for (String aiKey : annotationMap.keySet())
-                    if (Number.class.isAssignableFrom(annotationMap.get(aiKey).getClass()))
-                         result.add(aiKey);
+
+            List<List<List<HashMap<String,Object>>>> ai = vrd.getGenotypeAnnotationArray();
+            if (ai == null) continue;
+
+            for (int projectId : projIDs) {
+
+                if (projectId >= ai.size()) continue;
+
+                List<List<HashMap<String,Object>>> project = ai.get(projectId);
+                if (project == null) continue;
+
+                for (List<HashMap<String,Object>> run : project) {
+                    if (run == null) continue;
+
+                    for (Object o : run) {
+                        if (o == null ) continue;
+
+                        Map<String, Object> annotationMap = (Map<String, Object>) o;
+
+                        for (Object value : annotationMap.values()) {
+                            if (value instanceof Number) {
+                                for (String key : annotationMap.keySet()) {
+                                    if (annotationMap.get(key) instanceof Number) {
+                                        result.add(key);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
         return result;
     }
@@ -1602,6 +1629,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, "; ", null);
             String fullVariantId = Helper.createId(module, varId);
             Variant var = varMap.get(fullVariantId);
+            if (var==null) {
+                continue;
+            }
             
             // variantSetIDs.add((Integer) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, "; ", null));
             
@@ -1697,7 +1727,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     	if (!variantsForWhichAnnotationWasRetrieved.contains(varId)) {
 	                        variantsForWhichAnnotationWasRetrieved.add(varId);
                             List<List<Map<String,Object>>> variantAnnotationArray = (List<List<Map<String,Object>>>) variantObj.get(key);
-	                        Map<String, Object> additionalInfos = (Map<String, Object>) variantAnnotationArray.get(1).get(0); // FIXME: use exact project and run
+                            if (variantAnnotationArray==null || variantAnnotationArray.isEmpty())
+                                break;
+	                        Map<String, Object> additionalInfos = (Map<String, Object>) variantAnnotationArray.get(0).get(0); // FIXME: use exact project and run
 	                        for (String subKey : additionalInfos.keySet()) {
 	
 	                            if (subKey.equals("") || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ)) {
