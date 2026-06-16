@@ -256,8 +256,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         TreeSet<String> result = new TreeSet<>();
         MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
         Query q = new Query();
-        q.limit(3);
-        q.fields().include("ai");
+        q.limit(15);
+        q.fields().include(VariantRunData.SECTION_ADDITIONAL_INFO);
         Iterator<VariantRunData> it = mongoTemplate.find(q, VariantRunData.class).iterator();
 
         while (it.hasNext()) {
@@ -422,10 +422,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         List<DBObject> toAdd = new ArrayList<>(), toRemove = new ArrayList<>();
         for (Object filter : initialMatchForVariantColl) {
         	BasicDBObject modifiedFilter = (BasicDBObject) ((BasicDBObject) filter).clone();
-            Object variantIdRangeFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
+            Object variantIdRangeFilter = ((DBObject) filter).get("_id");
             if (variantIdRangeFilter != null) {
             	modifiedFilter.put("_id", variantIdRangeFilter);
-            	modifiedFilter.removeField("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID);
+            	//modifiedFilter.removeField("_id");
             }                
         	Object projFilter = ((DBObject) filter).get("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID);
         	if (null != projFilter) {
@@ -465,7 +465,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 else {    // DB server is the same machine as web server: $in operator will not be expensive
                     if (!fMultiProjectDB)    // for single project dbs, $in is equivalent to original query, otherwise only a pre-filter
                     	genotypingDataPipeline.remove(0);
-                    genotypingDataPipeline.add(0, new BasicDBObject("$match", new BasicDBObject("$and", new BasicDBList() {{ add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", chunkPreFilteredIDs)));}} )));
+                    genotypingDataPipeline.add(0, new BasicDBObject("$match", new BasicDBObject("$and", new BasicDBList() {{ add(new BasicDBObject("_id", new BasicDBObject("$in", chunkPreFilteredIDs)));}} )));
                 }
             }
             else if (varColl.countDocuments(initialMatchForVariantColl) == 0)    // only try and use pre-filtering to avoid executing genotyping data queries on irrelevant chunks
@@ -785,7 +785,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	            
 	            //in this case, there is only one variantQueryDBList (no filtering on variant ids)
 	            BasicDBList variantQueryDBList = !variantRunDataQueries.isEmpty() ? variantRunDataQueries.iterator().next() : new BasicDBList();
-	
+	           // if (!variantQueryDBList.isEmpty()) variantQueryDBList.remove(0); // FIXME: this removes matching _id.pi with selected projects, must not add it to the list in the first place.
 	            final GenotypingDataQueryBuilder genotypingDataQueryBuilder = new GenotypingDataQueryBuilder(gsvr, workWithSamples, variantQueryDBList, false);
 	
 	            try {
@@ -1577,7 +1577,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
 
         BasicDBList matchAndList = new BasicDBList();
-        matchAndList.add(new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, new BasicDBObject("$in", varMap.keySet().stream().map(id -> id.split(Helper.ID_SEPARATOR)[1]).toList())));
+        matchAndList.add(new BasicDBObject("_id", new BasicDBObject("$in", varMap.keySet().stream().map(id -> id.split(Helper.ID_SEPARATOR)[1]).toList())));
 
         HashMap<Integer, List<String>> involvedProjectRuns = callsets.stream().collect(Collectors.groupingBy(
     		Callset::getProjectId,
@@ -1626,7 +1626,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	        }
         else while (genotypingDataCursor.hasNext()) {
             Document variantObj = genotypingDataCursor.next();
-            String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, "; ", null);
+            String varId = (String) Helper.readPossiblyNestedField(variantObj, "_id", "; ", null);
             String fullVariantId = Helper.createId(module, varId);
             Variant var = varMap.get(fullVariantId);
             if (var==null) {
@@ -1649,11 +1649,16 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             GenotypingProject project = mongoTemplate.findById(projectIdx, GenotypingProject.class);
                             String currentRun = cs.getRun();
                             int runIdx = project.getRuns().indexOf(currentRun);
+                            int csIdx = cs.getCallSetIndexInsideArray();
 
-
-                            Integer genotypeCode = genotypeArray.get(projectIdx).get(runIdx).get(cs.getCallSetIndexInsideArray()); //FIXME: get the exact project and run - FIXED (To be tested)
+                            if (projectIdx >= genotypeArray.size()) break;
+                            if ( genotypeArray.get(projectIdx) == null || runIdx >= genotypeArray.get(projectIdx).size()) break;
+                            if (csIdx >= genotypeArray.get(projectIdx).get(runIdx).size() ) break;
+                            Integer genotypeCode = genotypeArray.get(projectIdx).get(runIdx).get(csIdx); //FIXME: get the exact project and run - FIXED (To be tested)
                             String decodedGenotype = GenotypeCodeManager.decodeGenotypeCode(genotypeCode,mongoTemplate);
-                            Document annotations = genotypeAnnotationArray.get(projectIdx).get(runIdx).get(cs.getCallSetIndexInsideArray()); //FIXME: get the exact project and run - FIXED (To be tested)
+                            boolean bRunGotGenotypeAnnotations = genotypeAnnotationArray.size() > projectIdx ? (genotypeAnnotationArray.get(projectIdx).size() > runIdx ? true : false) : false;
+                            Object annotations = null;
+                            if (bRunGotGenotypeAnnotations) annotations = genotypeAnnotationArray.get(projectIdx).get(runIdx).get(cs.getCallSetIndexInsideArray()); //FIXME: get the exact project and run - FIXED (To be tested)
                             Document callObj = new Document();
                             callObj.put("gt", decodedGenotype);
                             callObj.put("ai", annotations);
@@ -1726,10 +1731,10 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                     case "vai": // FIXME: Use variable instead
                     	if (!variantsForWhichAnnotationWasRetrieved.contains(varId)) {
 	                        variantsForWhichAnnotationWasRetrieved.add(varId);
-                            List<List<Map<String,Object>>> variantAnnotationArray = (List<List<Map<String,Object>>>) variantObj.get(key);
+                            Map<String,Object> variantAnnotationArray = (Map<String,Object>) variantObj.get(key);
                             if (variantAnnotationArray==null || variantAnnotationArray.isEmpty())
                                 break;
-	                        Map<String, Object> additionalInfos = (Map<String, Object>) variantAnnotationArray.get(0).get(0); // FIXME: use exact project and run
+                            Map<String,Object> additionalInfos = variantAnnotationArray;
 	                        for (String subKey : additionalInfos.keySet()) {
 	
 	                            if (subKey.equals("") || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) || subKey.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ)) {
@@ -2767,10 +2772,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * for VCF 4.2 version using ANN notation
      *
      * @param id variant ID
+     * @param projects comma separated projects database IDs
      * @return snpEff annotation for this variant
      * @throws Exception 
      */
-    public VariantAnnotation getVariantAnnotation(String id) throws Exception {
+    public VariantAnnotation getVariantAnnotation(String id, String projects) throws Exception {
         VariantAnnotation.Builder variantAnnotationBuilder = VariantAnnotation.newBuilder()
             .setVariantId(id)
             .setId(id)
@@ -2779,35 +2785,41 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     	String info[] = Helper.getInfoFromId(id, 2);
         String module = info[0];
         String variantId = info[1];
+
+        MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
+
+        /**
+         * Contruct project IDs list.
+         * E.g. let projects = "database§1,database§2,database§3", projectsIds will have the value [1, 2, 3]
+         */
+        List<Integer> projectIds = Arrays.stream(projects.split(","))
+                .map(projectID -> Integer.parseInt(Helper.getInfoFromId(projectID,2)[1]))
+                .toList();
+
+
         String[] headerField;
         String header;
 
         // parse annotation fields
         BasicDBObject queryVarAnn = new BasicDBObject();
         BasicDBObject varAnnField = new BasicDBObject();
-        queryVarAnn.put("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, variantId);
+        queryVarAnn.put("_id", variantId);
         varAnnField.put(VariantData.FIELDNAME_KNOWN_ALLELES, 1);
-        varAnnField.put("vai", 1);
+
+        // Retrieve variant annotations ("vai" for now) and variant run metadata ("vra" for now)
+        varAnnField.put("vai", 1); // FIXME: Must define a variable for this
+        varAnnField.put("vra", 1); // FIXME: Must define a variable for this
         Document variantRunDataObj = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).find(queryVarAnn).projection(varAnnField)
-            .sort(new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1))  /*FIXME: this method should be called separately for each run*/
+            .sort(new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1))  /*FIXME: this method should be called separately for each run. This comment may be removed since one document per variant*/
             .first();
         Document variantAnnotationObj = null;
+        List<List<Document>> variantRunsMetadata = null;
 
         if (variantRunDataObj != null) {
-            Object vaiObj = variantRunDataObj.get("vai");
-
-            if (vaiObj instanceof List<?>) {
-                List<?> list1 = (List<?>) vaiObj;
-
-                if (!list1.isEmpty() && list1.get(1) instanceof List<?>) {
-                    List<?> list2 = (List<?>) list1.get(1); // FIXME: use exact project and run!
-
-                    if (!list2.isEmpty() && list2.get(0) instanceof Document) {
-                        variantAnnotationObj = (Document) list2.get(0);
-                    }
-                }
-            }
+            variantAnnotationObj = (Document) variantRunDataObj.get("vai"); // FIXME: replace with variable
+            variantRunsMetadata = (List<List<Document>>) variantRunDataObj.get("vra"); // FIXME: replace with variable
         }
+        Map<String, List<String>> additionalInfo = new HashMap<>();
         if (variantAnnotationObj != null) {
             String ann = (String) variantAnnotationObj.get(VcfImport.ANNOTATION_FIELDNAME_ANN);
             if (ann == null)
@@ -2815,7 +2827,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             boolean fAnnStyle = ann != null;
             if (!fAnnStyle)
                 ann = (String) variantAnnotationObj.get(VcfImport.ANNOTATION_FIELDNAME_EFF);
-            Map<String, List<String>> additionalInfo = new HashMap<>();
+
 
             String[] tableTranscriptEffect = new String[0];
             if (ann != null) {
@@ -2993,15 +3005,95 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 }
             }
 
-            TreeMap<String, String> metadata = new TreeMap<>();
-            for (String key : variantAnnotationObj.keySet())
-                // do not store EFF_ge / EFF_nm / EFF / ANN / CSW
-                if (!key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE) && !key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_EFF) && !key.equals(""))
-                    metadata.put(key, Helper.nullToEmptyString(variantAnnotationObj.get(key)));
-            additionalInfo.put(Constants.METADATA_HEADER, new ArrayList<String>(metadata.keySet()));
-            additionalInfo.put(Constants.METADATA_VALUE_LIST, new ArrayList<String>(metadata.values()));
-            variantAnnotationBuilder.setInfo(additionalInfo);
+
         }
+
+        if (variantRunsMetadata != null && !variantRunsMetadata.isEmpty()) {
+
+            /**
+             * Metadata is defined per run. For all runs belonging to the selected projects,
+             * we collect:
+             *
+             * - metaHeaders: the set of all metadata field names encountered across runs.
+             * - metadataValues: a mapping from run name to its metadata values.
+             *
+             * Example:
+             * {
+             *     "project1_run1" : ["val1", "val2", "val3"],
+             *     "project1_run2" : ["val4", "val5", "val6"],
+             *     "project2_run1" : ["val7", "val8", "val9"],
+             * }
+             */
+
+            LinkedHashSet<String> metaHeadersSet = new LinkedHashSet<>();
+
+            // -------------------------
+            // PASS 1: collect headers
+            // -------------------------
+            for (int projId : projectIds) {
+
+                List<Document> projectRunsMetadata = variantRunsMetadata.get(projId);
+                if (projectRunsMetadata == null) continue;
+
+                for (Document doc : projectRunsMetadata) {
+                    if (doc == null) continue;
+                    metaHeadersSet.addAll(doc.keySet());
+                }
+            }
+
+            List<String> metaHeaders = new ArrayList<>(metaHeadersSet);
+
+            HashMap<String, ArrayList<String>> metadataValues = new HashMap<>();
+
+            // -------------------------
+            // PASS 2: build aligned rows
+            // -------------------------
+            for (int projId : projectIds) {
+
+                GenotypingProject currentProject =
+                        mongoTemplate.findById(projId, GenotypingProject.class);
+
+                if (currentProject == null) continue;
+
+                String projectName = currentProject.getName();
+
+                List<String> currentRuns = currentProject.getRuns();
+                if (currentRuns == null || currentRuns.isEmpty()) continue;
+
+                List<Document> projectRunsMetadata = variantRunsMetadata.get(projId);
+                if (projectRunsMetadata == null) continue;
+
+                for (int runIndex = 0; runIndex < currentRuns.size(); runIndex++) {
+
+                    if (runIndex >= projectRunsMetadata.size()) continue;
+
+                    Document doc = projectRunsMetadata.get(runIndex);
+                    if (doc == null) continue;
+
+                    String runName = currentRuns.get(runIndex);
+
+                    ArrayList<String> valuesForRun = new ArrayList<>();
+
+                    for (String h : metaHeaders) {
+                        Object value = doc.get(h);
+                        valuesForRun.add(value == null ? "" : value.toString());
+                    }
+
+                    metadataValues.put(projectName + "_" + runName, valuesForRun);
+                }
+            }
+
+            additionalInfo.put(Constants.METADATA_HEADER, metaHeaders);
+
+            for (String key : metadataValues.keySet()) {
+                additionalInfo.put(
+                        Constants.METADATA_VALUE_LIST + "_" + key,
+                        metadataValues.get(key)
+                );
+            }
+        }
+
+        variantAnnotationBuilder.setInfo(additionalInfo);
         return variantAnnotationBuilder.build();
     }
 
