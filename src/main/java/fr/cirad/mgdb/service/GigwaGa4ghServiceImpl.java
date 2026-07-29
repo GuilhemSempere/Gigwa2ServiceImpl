@@ -47,6 +47,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -327,7 +328,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     public List<String> listSequences(HttpServletRequest request, String sModule, Collection<Integer> projIDs) {    	
     	List<String> result = new ArrayList<String>(MongoTemplateManager.get(sModule).find(new Query(Criteria.where("_id").in(projIDs)), GenotypingProject.class).stream()
     		    .map(proj -> proj.getContigs(Assembly.safelyGetThreadBoundAssembly(sModule)))
-    		    .flatMap(TreeSet::stream)
+    		    .flatMap(ConcurrentSkipListSet::stream)
     		    .collect(Collectors.toCollection(TreeSet::new)));
 
 //        List<String> externallySelectedSequences = getSequenceIDsBeingFilteredOn(request.getSession(), sModule);
