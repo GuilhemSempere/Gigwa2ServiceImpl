@@ -131,19 +131,19 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
         genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "This will allow variants where all or most selected individuals have the same genotype");
         genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "This will allow variants where none of the selected individuals have the same genotype");
         genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "This will allow variants where some of the selected individuals have the same genotypes");
-        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "This will allow variants where selected individuals are all homozygous with the reference allele");
-        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will allow variants where where at least one selected individual is homozygous with the reference allele");
-        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will allow variants where selected individuals are all homozygous with an alternate allele");
-        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will allow variants where at least one selected individual is homozygous with an alternate allele");
+//        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "This will allow variants where selected individuals are all homozygous with the reference allele");
+//        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "This will allow variants where where at least one selected individual is homozygous with the reference allele");
+//        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "This will allow variants where selected individuals are all homozygous with an alternate allele");
+//        genotypePatternToDescriptionMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "This will allow variants where at least one selected individual is homozygous with an alternate allele");
         genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL, null);
         genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_MOSTLY_SAME, "$eq");
         genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_SAME, "$eq" + MgdbSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
         genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_DIFFERENT, "$ne");
         genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_NOT_ALL_DIFFERENT, "$ne" + MgdbSearchVariantsRequest.AGGREGATION_QUERY_NEGATION_SUFFIX);
-        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
-        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
-        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
-        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
+//        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
+//        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_REF, "^0(/0)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
+//        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ALL_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_ALL_IND_SUFFIX);
+//        genotypePatternToQueryMap.put(MgdbSearchVariantsRequest.GENOTYPE_CODE_LABEL_ATL_ONE_HOMOZYGOUS_VAR, "^([1-9][0-9]*)(/\\1)*$"/*|^$"*/ + MgdbSearchVariantsRequest.AGGREGATION_QUERY_REGEX_APPLY_TO_AT_LEAST_ONE_IND_SUFFIX);
     }
 
     public GenotypingDataQueryBuilder(MgdbSearchVariantsRequest gsvr, boolean workWithSamples, BasicDBList variantQueryDBList, boolean fForCounting) throws Exception
@@ -902,7 +902,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 
         if (finalMatchList.size() > 0)
             pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", finalMatchList)));
-        LOG.debug("filtering with: " + pipeline);
+        // LOG.debug("filtering with: " + pipeline);
         return pipeline;
     }
 

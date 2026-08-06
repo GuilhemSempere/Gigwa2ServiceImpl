@@ -1595,7 +1595,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             BasicDBObject projectFilter = new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, projId);
             runOrList.add(new BasicDBObject("$and", Arrays.asList(projectFilter, new BasicDBObject("_id." + VariantRunDataId.FIELDNAME_RUNNAME, new BasicDBObject("$in", projectInvolvedRuns)))));
         }
-        if (!runOrList.isEmpty())
+        // if (!runOrList.isEmpty())
 //        	matchAndList.add(new BasicDBObject("$or", runOrList));
 
          pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", matchAndList)));
