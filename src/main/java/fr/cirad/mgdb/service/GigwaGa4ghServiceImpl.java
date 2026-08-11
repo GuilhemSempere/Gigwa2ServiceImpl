@@ -2773,76 +2773,54 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
      * for VCF 4.2 version using ANN notation
      *
      * @param id variant ID
-     * @param projects comma separated IDs
-     * @return functional annotations for this variant
-     * @throws Exception 
+     * @param projects comma separated projects database IDs
+     * @return snpEff annotation for this variant
+     * @throws Exception
      */
     public VariantAnnotation getVariantAnnotation(String id, String projects) throws Exception {
         VariantAnnotation.Builder variantAnnotationBuilder = VariantAnnotation.newBuilder()
-            .setVariantId(id)
-            .setId(id)
-            .setVariantAnnotationSetId(id.substring(0, id.lastIndexOf(Helper.ID_SEPARATOR))); // which variant annotation set?
+                .setVariantId(id)
+                .setId(id)
+                .setVariantAnnotationSetId(id.substring(0, id.lastIndexOf(Helper.ID_SEPARATOR))); // which variant annotation set?
 
-    	String info[] = Helper.getInfoFromId(id, 2);
+        String info[] = Helper.getInfoFromId(id, 2);
         String module = info[0];
+        String variantId = info[1];
 
         MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
 
-        String variantId = info[1];
+        /**
+         * Contruct project IDs list.
+         * E.g. let projects = "database§1,database§2,database§3", projectsIds will have the value [1, 2, 3]
+         */
+        List<Integer> projectIds = Arrays.stream(projects.split(","))
+                .map(projectID -> Integer.parseInt(Helper.getInfoFromId(projectID,2)[1]))
+                .toList();
+
+
         String[] headerField;
         String header;
 
         // parse annotation fields
         BasicDBObject queryVarAnn = new BasicDBObject();
         BasicDBObject varAnnField = new BasicDBObject();
-        queryVarAnn.put("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID, variantId);
-        if (projects != null && !projects.isEmpty())
-        	queryVarAnn.put("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID, new Document("$in", Arrays.stream(projects.split(",")).map(projectID -> Integer.parseInt(Helper.getInfoFromId(projectID,2)[1])).toList()));
+        queryVarAnn.put("_id", variantId);
         varAnnField.put(VariantData.FIELDNAME_KNOWN_ALLELES, 1);
-        varAnnField.put(VariantData.SECTION_ADDITIONAL_INFO, 1);
-        List<Document> variantRunDataObj = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).find(queryVarAnn).projection(varAnnField)
-            .sort(new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1))  /*FIXME: this method should be called separately for each run*/
-            .into(new ArrayList<>());
 
+        // Retrieve variant annotations ("vai" for now) and variant run metadata ("vra" for now)
+        varAnnField.put("vai", 1); // FIXME: Must define a variable for this
+        varAnnField.put("vra", 1); // FIXME: Must define a variable for this
+        Document variantRunDataObj = MongoTemplateManager.get(module).getCollection(MongoTemplateManager.getMongoCollectionName(VariantRunData.class)).find(queryVarAnn).projection(varAnnField)
+                .sort(new BasicDBObject(AbstractVariantData.SECTION_ADDITIONAL_INFO + "." + VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME, -1))  /*FIXME: this method should be called separately for each run. This comment may be removed since one document per variant*/
+                .first();
+        Document variantAnnotationObj = null;
+        List<List<Document>> variantRunsMetadata = null;
+
+        if (variantRunDataObj != null) {
+            variantAnnotationObj = (Document) variantRunDataObj.get("vai"); // FIXME: replace with variable
+            variantRunsMetadata = (List<List<Document>>) variantRunDataObj.get("vra"); // FIXME: replace with variable
+        }
         Map<String, List<String>> additionalInfo = new HashMap<>();
-
-        Map<String, Map<String, String>> allMetadata = new LinkedHashMap<>();
-        TreeSet<String> metadataHeaders = new TreeSet<>();
-
-        for (Document run : variantRunDataObj) {
-            Map<String, Object> runMetadata = (Map<String, Object>) run.get(VariantData.SECTION_ADDITIONAL_INFO);
-            if (runMetadata == null)
-                continue;
-
-            Map<String, String> metadata = new HashMap<>();
-
-            for (String key : runMetadata.keySet()) {
-                // do not store EFF_ge / EFF_nm / EFF / ANN / CSQ
-                if (!key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE)
-                        && !key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME)
-                        && !key.equals(VcfImport.ANNOTATION_FIELDNAME_ANN)
-                        && !key.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ)
-                        && !key.equals(VcfImport.ANNOTATION_FIELDNAME_EFF)
-                        && !key.equals("")) {
-
-                    metadata.put(key, Helper.nullToEmptyString(runMetadata.get(key)));
-                    metadataHeaders.add(key);
-                }
-            }
-
-            Document idDoc = (Document) run.get("_id");
-            allMetadata.put(Constants.METADATA_VALUE_LIST + "_" + idDoc.get(VariantRunDataId.FIELDNAME_PROJECT_ID) + "_" + idDoc.get(VariantRunDataId.FIELDNAME_RUNNAME), metadata);
-        }
-
-        List<String> metadataHeaderList = new ArrayList<>(metadataHeaders);
-        for (Map.Entry<String, Map<String, String>> entry : allMetadata.entrySet()) {
-            List<String> values = new ArrayList<>(metadataHeaderList.size());
-            for (String headerLabel : metadataHeaderList)
-                values.add(entry.getValue().getOrDefault(headerLabel, ""));
-            additionalInfo.put(entry.getKey(), values);
-        }
-
-        Document variantAnnotationObj = !variantRunDataObj.isEmpty() ? (Document) variantRunDataObj.iterator().next().get(VariantRunData.SECTION_ADDITIONAL_INFO) : null;
         if (variantAnnotationObj != null) {
             String ann = (String) variantAnnotationObj.get(VcfImport.ANNOTATION_FIELDNAME_ANN);
             if (ann == null)
@@ -2850,6 +2828,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
             boolean fAnnStyle = ann != null;
             if (!fAnnStyle)
                 ann = (String) variantAnnotationObj.get(VcfImport.ANNOTATION_FIELDNAME_EFF);
+
 
             String[] tableTranscriptEffect = new String[0];
             if (ann != null) {
@@ -2973,11 +2952,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                                         boolean fWorkingOnProtein = "Protein_position".equals(positionHeader);
 
-                                        String sRefAllele = ((List<String>) variantRunDataObj.iterator().next().get(VariantData.FIELDNAME_KNOWN_ALLELES)).get(0);
+                                        String sRefAllele = ((List<String>) variantRunDataObj.get(VariantData.FIELDNAME_KNOWN_ALLELES)).get(0);
                                         if (!fWorkingOnProtein)
                                             allLocBuilder.setEnd(allLocBuilder.getStart() + sRefAllele.length() - 1);
 //                                        else
-                                            /* TODO: don't know how to calculate END field for proteins */
+                                        /* TODO: don't know how to calculate END field for proteins */
 
                                         if ("cDNA_position".equals(positionHeader))
                                             cDnaLocation = allLocBuilder.build();
@@ -3027,17 +3006,98 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 }
             }
 
-            TreeMap<String, String> metadata = new TreeMap<>();
-            for (String key : variantAnnotationObj.keySet())
-                // do not store EFF_ge / EFF_nm / EFF / ANN / CSW
-                if (!key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_GENE) && !key.equals(VariantRunData.FIELDNAME_ADDITIONAL_INFO_EFFECT_NAME) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_ANN) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_CSQ) && !key.equals(VcfImport.ANNOTATION_FIELDNAME_EFF) && !key.equals(""))
-                    metadata.put(key, Helper.nullToEmptyString(variantAnnotationObj.get(key)));
-            additionalInfo.put(Constants.METADATA_HEADER, new ArrayList<String>(metadata.keySet()));
-            additionalInfo.put(Constants.METADATA_VALUE_LIST, new ArrayList<String>(metadata.values()));
-            variantAnnotationBuilder.setInfo(additionalInfo);
+
         }
+
+        if (variantRunsMetadata != null && !variantRunsMetadata.isEmpty()) {
+
+            /**
+             * Metadata is defined per run. For all runs belonging to the selected projects,
+             * we collect:
+             *
+             * - metaHeaders: the set of all metadata field names encountered across runs.
+             * - metadataValues: a mapping from run name to its metadata values.
+             *
+             * Example:
+             * {
+             *     "project1_run1" : ["val1", "val2", "val3"],
+             *     "project1_run2" : ["val4", "val5", "val6"],
+             *     "project2_run1" : ["val7", "val8", "val9"],
+             * }
+             */
+
+            LinkedHashSet<String> metaHeadersSet = new LinkedHashSet<>();
+
+            // -------------------------
+            // PASS 1: collect headers
+            // -------------------------
+            for (int projId : projectIds) {
+
+                List<Document> projectRunsMetadata = variantRunsMetadata.get(projId);
+                if (projectRunsMetadata == null) continue;
+
+                for (Document doc : projectRunsMetadata) {
+                    if (doc == null) continue;
+                    metaHeadersSet.addAll(doc.keySet());
+                }
+            }
+
+            List<String> metaHeaders = new ArrayList<>(metaHeadersSet);
+
+            HashMap<String, ArrayList<String>> metadataValues = new HashMap<>();
+
+            // -------------------------
+            // PASS 2: build aligned rows
+            // -------------------------
+            for (int projId : projectIds) {
+
+                GenotypingProject currentProject =
+                        mongoTemplate.findById(projId, GenotypingProject.class);
+
+                if (currentProject == null) continue;
+
+                String projectName = currentProject.getName();
+
+                List<String> currentRuns = currentProject.getRuns();
+                if (currentRuns == null || currentRuns.isEmpty()) continue;
+
+                List<Document> projectRunsMetadata = variantRunsMetadata.get(projId);
+                if (projectRunsMetadata == null) continue;
+
+                for (int runIndex = 0; runIndex < currentRuns.size(); runIndex++) {
+
+                    if (runIndex >= projectRunsMetadata.size()) continue;
+
+                    Document doc = projectRunsMetadata.get(runIndex);
+                    if (doc == null) continue;
+
+                    String runName = currentRuns.get(runIndex);
+
+                    ArrayList<String> valuesForRun = new ArrayList<>();
+
+                    for (String h : metaHeaders) {
+                        Object value = doc.get(h);
+                        valuesForRun.add(value == null ? "" : value.toString());
+                    }
+
+                    metadataValues.put(projectName + "_" + runName, valuesForRun);
+                }
+            }
+
+            additionalInfo.put(Constants.METADATA_HEADER, metaHeaders);
+
+            for (String key : metadataValues.keySet()) {
+                additionalInfo.put(
+                        Constants.METADATA_VALUE_LIST + "_" + key,
+                        metadataValues.get(key)
+                );
+            }
+        }
+
+        variantAnnotationBuilder.setInfo(additionalInfo);
         return variantAnnotationBuilder.build();
     }
+
 
     @Override
     public Map<String, String> getAnnotationHeaders(String module, Collection<Integer> projIDs) {
