@@ -20,14 +20,15 @@ package fr.cirad.web.filter;
 import java.io.IOException;
 import java.util.stream.Collectors;
 
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 
@@ -38,13 +39,13 @@ import fr.cirad.tools.mongo.MongoTemplateManager;
 /**
  * The Class AssemblyFilter.
  */
-public class GigwaAssemblyFilter implements javax.servlet.Filter {
+public class GigwaAssemblyFilter implements jakarta.servlet.Filter {
 
 	/** The Constant LOG. */
-	private static final Logger LOG = Logger.getLogger(GigwaAssemblyFilter.class);
+	private static final Logger LOG = LoggerFactory.getLogger(GigwaAssemblyFilter.class);
 
 	/* (non-Javadoc)
-	 * @see javax.servlet.Filter#destroy()
+	 * @see jakarta.servlet.Filter#destroy()
 	 */
 	@Override
 	public void destroy()
@@ -52,7 +53,7 @@ public class GigwaAssemblyFilter implements javax.servlet.Filter {
 	}
 
 	/* (non-Javadoc)
-	 * @see javax.servlet.Filter#doFilter(javax.servlet.ServletRequest, javax.servlet.ServletResponse, javax.servlet.FilterChain)
+	 * @see jakarta.servlet.Filter#doFilter(jakarta.servlet.ServletRequest, jakarta.servlet.ServletResponse, jakarta.servlet.FilterChain)
 	 */
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain fc) throws IOException, ServletException
@@ -76,7 +77,7 @@ public class GigwaAssemblyFilter implements javax.servlet.Filter {
 	}
 
 	/* (non-Javadoc)
-	 * @see javax.servlet.Filter#init(javax.servlet.FilterConfig)
+	 * @see jakarta.servlet.Filter#init(jakarta.servlet.FilterConfig)
 	 */
 	@Override
 	public void init(FilterConfig arg0) throws ServletException

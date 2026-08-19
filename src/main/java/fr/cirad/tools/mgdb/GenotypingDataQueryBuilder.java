@@ -33,9 +33,10 @@ import java.util.stream.Collectors;
 import fr.cirad.mgdb.model.mongo.maintypes.*;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.math.util.MathUtils;
-import org.apache.log4j.Logger;
 import org.bson.Document;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -61,7 +62,7 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
 {
 
     /** The Constant LOG. */
-    protected static final Logger LOG = Logger.getLogger(GenotypingDataQueryBuilder.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(GenotypingDataQueryBuilder.class);
 
     /** The mongo template. */
     private MongoTemplate mongoTemplate;

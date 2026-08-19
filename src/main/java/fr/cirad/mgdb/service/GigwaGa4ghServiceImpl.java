@@ -59,17 +59,16 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.ejb.ObjectNotFoundException;
-import javax.servlet.ServletContext;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
+import jakarta.ejb.ObjectNotFoundException;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import fr.cirad.mgdb.model.mongo.maintypes.*;
 import org.apache.avro.AvroRemoteException;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.log4j.Logger;
 import org.bson.Document;
 import org.ga4gh.methods.GAException;
 import org.ga4gh.methods.ListReferenceBasesRequest;
@@ -99,6 +98,8 @@ import org.ga4gh.models.Variant;
 import org.ga4gh.models.VariantAnnotation;
 import org.ga4gh.models.VariantSet;
 import org.ga4gh.models.VariantSetMetadata;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -178,7 +179,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     /**
      * logger
      */
-    protected static final Logger LOG = Logger.getLogger(GigwaGa4ghServiceImpl.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(GigwaGa4ghServiceImpl.class);
 
 //    /**
 //     * The Constant SEQLIST_FOLDER.
