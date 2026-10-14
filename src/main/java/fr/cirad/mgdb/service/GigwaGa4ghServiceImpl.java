@@ -26,7 +26,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
-import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -149,6 +148,7 @@ import fr.cirad.model.MgdbSearchVariantsRequest;
 import fr.cirad.security.base.IRoleDefinition;
 import fr.cirad.tools.AlphaNumericComparator;
 import fr.cirad.tools.AppConfig;
+import fr.cirad.tools.ExportSizeLimitHelper;
 import fr.cirad.tools.ExperimentalFeature;
 import fr.cirad.tools.Helper;
 import fr.cirad.tools.ProgressIndicator;
@@ -345,6 +345,9 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     private String isSearchedDatasetReasonablySized(MgdbSearchVariantsRequest gsvr) throws Exception
     {
+    	if ((gsvr.getGeneName() != null && gsvr.getGeneName().length() > 0) || (gsvr.getVariantEffect() != null && gsvr.getVariantEffect().length() > 0))
+    		return null;    // gene name and variant effect filters are selective enough, so we don't apply any limit on the number of sequences
+    	
         List<Integer> groupsForWhichToFilterOnGenotypingData = VariantQueryBuilder.getGroupsForWhichToFilterOnGenotypingData(gsvr, false);
         if (groupsForWhichToFilterOnGenotypingData.isEmpty())
             return null;    // no genotyping data filtering involved
@@ -984,14 +987,14 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         final ProgressIndicator progress = new ProgressIndicator(processId, new String[0]);
         ProgressIndicator.registerProgressIndicator(progress);
 
-//        new Thread() { public void run() {
-//                try {
-//                    cleanupExpiredExportData(gsver.getRequest().servletContext);
-//                } catch (IOException e) {
-//                    LOG.error("Unable to cleanup expired export files", e);
-//                }
-//            }
-//        }.start();
+        new Thread() { public void run() {
+                try {
+                    cleanupExpiredExportData(gsver.getRequest().getServletContext());
+                } catch (IOException e) {
+                    LOG.error("Unable to cleanup expired export files", e);
+                }
+            }
+        }.start();
 
         String info[] = Helper.extractModuleAndProjectIDsFromVariantSetIds(gsver.getVariantSetId());
         String sModule = info[0];
@@ -1029,30 +1032,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         Authentication auth = tokenManager.getAuthenticationFromToken(tokenManager.readToken(gsver.getRequest()));
         if (gsver.shallApplyMatrixSizeLimit())
         {    // make sure the matrix is not too big
-            int nMaxBillionGenotypesInvolved = 1;    // default
-            try {
-                nMaxBillionGenotypesInvolved = Integer.parseInt(appConfig.get("maxExportableBillionGenotypes_" + (auth == null ? "anonymousUser" : auth.getName())));
-            }
-            catch (Exception ignored1) {
-                   try {
-                    nMaxBillionGenotypesInvolved = Integer.parseInt(appConfig.get("maxExportableBillionGenotypes"));
-                }
-                catch (Exception ignored2)
-                {}
-            }
-
-            if (nMaxBillionGenotypesInvolved == 0)
-            {
-                progress.setError("You are not allowed to export any genotyping data.");
-                return;
-            }
-
             BigInteger matrixSize = BigInteger.valueOf(mongoTemplate.getCollection(usedVarCollName).countDocuments(variantQueryForTargetCollection)).multiply(BigInteger.valueOf(materialToExport.size()));
-            BigInteger maxAllowedSize = BigInteger.valueOf(1000000000).multiply(BigInteger.valueOf(nMaxBillionGenotypesInvolved));
-
-            if (matrixSize.divide(maxAllowedSize).intValue() >= 1)
+            String matrixSizeLimitError = ExportSizeLimitHelper.getExportMatrixSizeLimitErrorMessage(appConfig, auth, matrixSize);
+            if (matrixSizeLimitError != null)
             {
-                progress.setError("You may only export up to " + nMaxBillionGenotypesInvolved + " billion genotypes. The current selection contains " + BigDecimal.valueOf(matrixSize.longValue()).divide(BigDecimal.valueOf(1000000000)).setScale(2, BigDecimal.ROUND_HALF_UP) + " billion genotypes.");
+                progress.setError(matrixSizeLimitError);
                 return;
             }
         }
@@ -1217,62 +1201,6 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         }
     }
 
-//    @Override
-//    public int getSequenceFilterCount(HttpServletRequest request, String sModule) throws IOException {
-//        int result = -1;
-//        File sequenceListFile = new File(servletContext.getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
-//        if (sequenceListFile.exists() && sequenceListFile.length() > 0) {
-//            try (LineNumberReader lineNumberReader = new LineNumberReader(new FileReader(sequenceListFile))) {
-//                lineNumberReader.skip(Long.MAX_VALUE);
-//                result = lineNumberReader.getLineNumber();
-//            }
-//        }
-//        return result;
-//    }
-//
-//    @Override
-//    public ArrayList<String> getSequenceIDsBeingFilteredOn(HttpSession session, String sModule) {
-//        ArrayList<String> sequences = new ArrayList<>();
-//        File selectionFile = new File(session.getServletContext().getRealPath(SEQLIST_FOLDER) + File.separator + session.getId() + "_" + sModule);
-//        if (selectionFile.exists() && selectionFile.length() > 0) {
-//            Scanner sc = null;
-//            try {
-//                sc = new Scanner(selectionFile);
-//                sc.nextLine();    // skip queryKey line
-//                while (sc.hasNextLine()) {
-//                    sequences.add(sc.nextLine().trim());
-//
-//                } // skip queryKey line
-//            } catch (FileNotFoundException ex) {
-//                LOG.debug("couldn't find sequence list file", ex);
-//            } finally {
-//                sc.close();
-//            }
-//        }
-//        return sequences.isEmpty() ? null : sequences;
-//    }
-//
-//    @Override
-//    public void clearSequenceFilterFile(HttpServletRequest request, String sModule) {
-//        File selectionFile = new File(servletContext.getRealPath(SEQLIST_FOLDER) + File.separator + request.getSession().getId() + "_" + sModule);
-//        if (selectionFile.exists()) {
-//            selectionFile.delete();
-//        }
-//    }
-//
-//    @Override
-//    public String getSequenceFilterQueryKey(HttpServletRequest request, String sModule) throws IOException {
-//
-//        String qk = null;
-//        File sequenceListFile = new File(servletContext.getRealPath(SEQLIST_FOLDER + File.separator + request.getSession().getId() + "_" + sModule));
-//        if (sequenceListFile.exists() && sequenceListFile.length() > 0) {
-//            try (LineNumberReader lineNumberReader = new LineNumberReader(new FileReader(sequenceListFile))) {
-//                qk = lineNumberReader.readLine();
-//            }
-//        }
-//        return qk;
-//    }
-    
     static public void cleanupExpiredExportData(ServletContext sc) throws IOException {
         Map<String, Long> folderToDelayMap = new LinkedHashMap<>() {{
             put(TMP_OUTPUT_DDL_FOLDER, DDL_EXPORT_EXPIRATION_DELAY_MILLIS);
