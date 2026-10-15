@@ -101,11 +101,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 import org.springframework.util.FileSystemUtils;
 import org.springframework.web.context.ServletContextAware;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
@@ -1931,18 +1933,18 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public CallSet getCallSet(String id) throws AvroRemoteException {
-        CallSet callSet = null;
+        try {
+            // get information from id
+            String[] info = Helper.getInfoFromId(id, 2);
+            LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsForUser(info[0], null, null, Arrays.asList(info[1]), null);
+            if (indMap.size() != 1)
+                return null;
 
-        // get information from id
-        String[] info = Helper.getInfoFromId(id, 2);
-        LinkedHashMap<String, Individual> indMap = mgdbDao.loadIndividualsForUser(info[0], null, null, Arrays.asList(info[1]), null);
-        if (indMap.size() == 1) {
-        	Individual ind = indMap.get(indMap.keySet().iterator().next());
-        	CallSet.Builder csb = CallSet.newBuilder().setId(id).setName(info[1]).setSampleId(null);
-        	
-            if (!ind.getAdditionalInfo().isEmpty()) {
+            Individual ind = indMap.get(indMap.keySet().iterator().next());
+            CallSet.Builder csb = CallSet.newBuilder().setId(id).setName(info[1]).setSampleId(null);
+            if (!ind.getAdditionalInfo().isEmpty()) {	// copy the individual's short string metadata onto the callset
                 Map<String, String> addInfoMap = new HashMap<>();
-                for (String key:ind.getAdditionalInfo().keySet()) {
+                for (String key : ind.getAdditionalInfo().keySet()) {
                     Object value = ind.getAdditionalInfo().get(key);
                     if (value instanceof String) {
                         int spaces = ((String) value).length() - ((String) value).replaceAll(" ", "").length();
@@ -1950,30 +1952,32 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                             addInfoMap.put(key, value.toString());
                     }
                 }
-                csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u,v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
+                csb.setInfo(addInfoMap.keySet().stream().collect(Collectors.toMap(k -> k, k -> (List<String>) Arrays.asList(addInfoMap.get(k).toString()), (u, v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); }, LinkedHashMap::new)));
             }
 
-            // find out which projects the individual is involved in (so we can set the variantSetIds field's contents)
             HashMap<String, TreeSet<String>> individualProjects = new HashMap<>();
         	Query q = new Query(Criteria.where(GenotypingSample.FIELDNAME_INDIVIDUAL).is(info[1]));
         	try {
-	        	for (Callset callset : MongoTemplateManager.get(info[0]).find(q, Callset.class)) {
-	        		String sIndividual = callset.getIndividual();
-	        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sIndividual);
-	        		if (projectsInvolvingIndividual == null) {
-	        			projectsInvolvingIndividual = new TreeSet<>();
-	        			individualProjects.put(sIndividual, projectsInvolvingIndividual);
-	        		}
-	       			projectsInvolvingIndividual.add("" + callset.getProjectId());
-	        	}
+        		for (GenotypingSample sample : MongoTemplateManager.get(info[0]).find(q, GenotypingSample.class))
+        			for (Callset callset : sample.getCallSets()) {
+		        		String sIndividual = callset.getIndividual();
+		        		TreeSet<String> projectsInvolvingIndividual = individualProjects.get(sIndividual);
+		        		if (projectsInvolvingIndividual == null) {
+		        			projectsInvolvingIndividual = new TreeSet<>();
+		        			individualProjects.put(sIndividual, projectsInvolvingIndividual);
+		        		}
+		       			projectsInvolvingIndividual.add("" + callset.getProjectId());
+		        	}
 			} catch (ObjectNotFoundException e) {
 				throw new AvroRemoteException(e);
 			}
         	
        		csb.setVariantSetIds(individualProjects.get(csb.getId().split(Helper.ID_SEPARATOR)[1]).stream().map(pjId -> (info[0] + Helper.ID_SEPARATOR + pjId)).toList());
-       		callSet = csb.build();
+       		
+            return csb.build();
+        } catch (Exception e) {
+            throw new AvroRemoteException(e);
         }
-        return callSet;
     }
 
     @Override
@@ -2082,67 +2086,50 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
     @Override
     public ListReferenceBasesResponse getReferenceBases(String id, ListReferenceBasesRequest lrbr) throws AvroRemoteException
     {
-           String[] info = Helper.getInfoFromId(id, 3);
-           String module = info[0];
-           String seqName = info[2];
-           String sequenceBases = "";
-           int spaceCode = (int) '\n';
-           int chevCode = (int) '>';
+        String[] info = Helper.getInfoFromId(id, 2);
+        if (info == null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed reference ID: " + id);
+        String module = info[0];
+        String seqName = info[1];
+        long start = lrbr.getStart() == null ? 0 : lrbr.getStart();	// the request is deserialized from JSON, which does not apply the schema's defaults
+        long end = lrbr.getEnd() == null ? Long.MAX_VALUE : lrbr.getEnd();
+        if (start < 0 || end <= start)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range: start must be >= 0 and end, when provided, greater than start");
 
-           if (lrbr.getEnd() > lrbr.getStart()) {
-               Sequence seq = MongoTemplateManager.get(module).findById(seqName, Sequence.class);
-               BufferedReader br = null;
-               StringBuilder builder;
-               if ((seq != null)) {
-                   try {
-                       br = new BufferedReader(new InputStreamReader(new FileInputStream(seq.getFilePath())));
-                       builder = new StringBuilder();
-                       String line;
-                       int c;
-                       int pos = 0;
-                       // skip line to reach sequence
-                   while ((line = br.readLine()) != null && !line.startsWith(">" + id)) {
+        Sequence seq = MongoTemplateManager.get(module).findById(seqName, Sequence.class);
+        if (seq == null || seq.getFilePath() == null)
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No FASTA data available for sequence " + seqName);
+        if (!new File(seq.getFilePath()).canRead())
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "FASTA file not found for sequence " + seqName);
 
-                   }
-                   // skip char to reach start pos
-                   while ((c = br.read()) != -1 && pos < lrbr.getStart()) {
-                       pos++;
-                   }
-                   builder.append((char) c);
+        StringBuilder builder = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(seq.getFilePath())))) {
+            String line;
+            while ((line = br.readLine()) != null && !line.startsWith(">" + id))
+                ;	// skip lines until the sequence's header
+            if (line == null)
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Sequence " + seqName + " not found in its FASTA file");
 
-                   while ((c = br.read()) != -1 && pos < lrbr.getEnd() && c != chevCode) {
-                       if (c != spaceCode) {
-                           builder.append((char) c);
-                           pos++;
-                       }
-                   }
-                   sequenceBases = builder.toString();
+            // read the sequence's bases (line breaks are not positions), stopping at the next header
+            long pos = 0;
+            int c;
+            while ((c = br.read()) != -1 && c != '>' && pos < end)
+                if (c != '\n' && c != '\r') {
+                    if (pos >= start)
+                        builder.append((char) c);
+                    pos++;
+                }
+            if (pos <= start)
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Start position " + start + " is beyond the end of sequence " + seqName + " (length " + pos + ")");
+        }
+        catch (IOException ex) {
+            throw new AvroRemoteException(ex);
+        }
 
-               }
-               catch (IOException ex)
-               {
-                   LOG.warn("could not open file : " + ex);
-               }
-               finally
-               {
-                   try
-                   {
-                       if (br != null)
-                           br.close();
-                   }
-                   catch (IOException ex)
-                   {
-                       LOG.warn("could not close writer : " + ex);
-                   }
-               }
-           }
-           else
-               throw new GAException("No fasta for sequence " + seqName);
-           }
-           ListReferenceBasesResponse result = new ListReferenceBasesResponse();
-           result.setSequence(sequenceBases);
-           result.setOffset(lrbr.getStart());
-           return result;
+        ListReferenceBasesResponse result = new ListReferenceBasesResponse();
+        result.setSequence(builder.toString());
+        result.setOffset(start);
+        return result;
     }
 
     /**
@@ -2558,56 +2545,36 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
     @Override
     public SearchReferencesResponse searchReferences(SearchReferencesRequest srr) throws AvroRemoteException {
-
-        SearchReferencesResponse response = null;
-
 		try {
             GigwaSearchReferencesRequest gsr = (GigwaSearchReferencesRequest) srr;
-	        Collection<Integer> projIDs = gsr.getVariantSetId() == null ? null : Arrays.stream(Helper.extractModuleAndProjectIDsFromVariantSetIds(gsr.getVariantSetId())[1].split(",")).map(pi -> Integer.parseInt(pi)).toList();
-
-        	MongoTemplate mongoTemplate = MongoTemplateManager.get(srr.getReferenceSetId());
-            int start;
-            int end;
-            int pageSize;
-            int pageToken = 0;
-            String nextPageToken;
-
-            Integer nAssembly = Assembly.safelyGetThreadBoundAssembly(srr.getReferenceSetId());
-
-//            List<Reference> listReference = new ArrayList<>();
-            List<String> accessions = new ArrayList<>();
-            Map<String, Integer> mapSeq = new TreeMap<>(new AlphaNumericComparator());
-
-            // allow search on checksum
-            // but here only on one checksum v0.6.1 ?
-            if (gsr.getMd5checksum() != null) {
-                BasicDBObject query = new BasicDBObject();
-                query.put(Sequence.FIELDNAME_CHECKSUM, gsr.getMd5checksum());
-//	                Document seq = mongoTemplate.getCollection(MongoTemplateManager.getMongoCollectionName(Sequence.class)).find(query).first();
-                // listSequence.add((String) seq.get("_id"));
-            } else {
-                Query q = new Query();
-//	                q.fields().include(GenotypingProject.FIELDNAME_SEQUENCES);
-                if (projIDs != null)
-                    q.addCriteria(Criteria.where("_id").in(projIDs));
-                List<GenotypingProject> listProj = mongoTemplate.find(q, GenotypingProject.class);
-                for (int i = 0; i < listProj.size(); i++) {
-                    for (String seq : listProj.get(i).getContigs(nAssembly)) {
-                        mapSeq.put(seq, i + 1);
-                    }
-                }
+            String sModule = gsr.getReferenceSetId() == null ? null : gsr.getReferenceSetId().split(Helper.ID_SEPARATOR)[0];
+            Collection<Integer> projIDs = null;	// null means all projects in the database
+            if (gsr.getVariantSetId() != null) {
+                String[] info = Helper.extractModuleAndProjectIDsFromVariantSetIds(gsr.getVariantSetId());
+                if (sModule != null && !sModule.equals(info[0]))	// referenceSetId and variantSetId point to different databases: nothing can match
+                    return SearchReferencesResponse.newBuilder().setReferences(new ArrayList<>()).setNextPageToken(null).build();
+                sModule = info[0];
+                projIDs = Arrays.stream(info[1].split(",")).map(pi -> Integer.parseInt(pi)).toList();
             }
-            int size = mapSeq.size();
+
+        	MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
+            Integer nAssembly = Assembly.safelyGetThreadBoundAssembly(sModule);
+
+            // md5checksum is not used for filtering since contig checksums are not stored
+            Query q = new Query();
+            if (projIDs != null)
+                q.addCriteria(Criteria.where("_id").in(projIDs));
+            TreeSet<String> contigs = new TreeSet<>(new AlphaNumericComparator<String>());
+            for (GenotypingProject project : mongoTemplate.find(q, GenotypingProject.class))
+                contigs.addAll(project.getContigs(nAssembly));
+
+            int size = contigs.size();
             // if page size is not specified, return all results
-            if (gsr.getPageSize() != null) {
-                pageSize = gsr.getPageSize();
-            } else {
-                pageSize = size;
-            }
-            if (gsr.getPageToken() != null) {
-                pageToken = Integer.parseInt(gsr.getPageToken());
-            }
-            start = pageSize * pageToken;
+            int pageSize = gsr.getPageSize() != null && gsr.getPageSize() > 0 ? gsr.getPageSize() : size;
+            int pageToken = gsr.getPageToken() != null ? Integer.parseInt(gsr.getPageToken()) : 0;
+            int start = Math.min(pageSize * pageToken, size);
+            int end;
+            String nextPageToken;
             if (size - start <= pageSize) {
                 end = size;
                 nextPageToken = null;
@@ -2616,27 +2583,22 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
                 nextPageToken = Integer.toString(pageToken + 1);
             }
 
-            HashMap<String, Reference> references = new HashMap<>();
-   			for (GenotypingProject project : mongoTemplate.find(new Query(), GenotypingProject.class))
-	   			for (String seq : project.getContigs(nAssembly)) {
-	                Reference reference = Reference.newBuilder().setId(Helper.createId(srr.getReferenceSetId(), seq))
-	                    .setMd5checksum(Helper.convertToMD5(""))
-	                    .setName(seq)
-	                    .setLength(0)
-	                    .setSourceAccessions(accessions)
-	                    .build();
-	                references.put(seq, reference);
-   				}
+            List<String> accessions = new ArrayList<>();
+            List<Reference> references = new ArrayList<>();
+            for (String seq : new ArrayList<>(contigs).subList(start, end))
+                references.add(Reference.newBuilder().setId(Helper.createId(sModule, seq))
+                    .setMd5checksum(Helper.convertToMD5(""))
+                    .setName(seq)
+                    .setLength(0)
+                    .setSourceAccessions(accessions)
+                    .build());
 
-            response = SearchReferencesResponse.newBuilder()
-                    .setReferences(new ArrayList<>(references.values()))
+	        return SearchReferencesResponse.newBuilder()
+                    .setReferences(references)
                     .setNextPageToken(nextPageToken)
                     .build();
-
-	        return response;
 		} catch (Exception e) {
             throw new AvroRemoteException(e);
-
 		}
     }
 
