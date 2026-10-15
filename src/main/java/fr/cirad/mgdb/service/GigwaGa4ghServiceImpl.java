@@ -1550,6 +1550,8 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 
                         for (Callset cs : callsets) {
                             Document callObj = (Document) callMap.get("" + cs.getId());
+                            if (callObj == null)
+                            	continue;	// callset not involved in this run (or missing data): empty calls are added once per individual further down
 
                             double[] gl;
                             List<Double> listGL = new ArrayList<>();
