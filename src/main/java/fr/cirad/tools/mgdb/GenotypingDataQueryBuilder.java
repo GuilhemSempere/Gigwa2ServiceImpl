@@ -83,6 +83,12 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     private List<TreeMap<String /*individual*/, ArrayList<Callset>>> individualOrSampleToCallSetListMaps = new ArrayList<>();
         
     private int nNextCallCount = 0;
+
+    /** Pipeline stages following the initial $match, the same for all chunks (built once, see buildPipeline()) */
+    private List<BasicDBObject> m_pipelineTail = null;
+
+    /** Criteria the first chunk's initial match got besides its interval, to be added to all following ones too (see next()) */
+    private List<Object> m_initialMatchAdditions = null;
     
     private int maxAlleleCount = 0;
     
@@ -98,6 +104,9 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     boolean m_fFilteringOnSequence = false;
     
     boolean m_fFilteringOnStartSite = false;
+
+    /** Whether chunks are position intervals (as opposed to tagged variant ID ranges), see {@link #isChunkedByPosition()} */
+    private boolean m_fChunkedByPosition = false;
 
     private Document groupFields;
 
@@ -215,12 +224,15 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
             nTotalChunkCount = (int) Helper.estimDocCount(mongoTemplate, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS) + 1;
         }
 
-        if (m_fFilteringOnSequence && m_fFilteringOnStartSite) {	// when filtering on a precise zone of the genome it's slightly quicker to chunk that given zone rather than use tagged variants
+        if (willChunkByPosition(gsvr)) {
 	        Long[] minMaxFound = new Long[2];   // will be filled in by the method below
-	        List<String> variantTypes = Arrays.asList(gsvr.getSelectedVariantTypes().split(";"));
+	        List<String> variantTypes = gsvr.getSelectedVariantTypes().isEmpty() ? null : Arrays.asList(gsvr.getSelectedVariantTypes().split(";"));	// an empty selection means all types, not type ""
 	        List<String> sequences = Arrays.asList(gsvr.getReferenceName().split(";"));
 	        if (Helper.findDefaultRangeMinMax(info[0], projIDs, null, variantTypes, sequences, gsvr.getStart(), gsvr.getEnd(), minMaxFound))
+	        {
 	        	this.intervalQueries = Helper.getIntervalQueries(nTotalChunkCount, sequences, variantTypes, minMaxFound[0], minMaxFound[1], variantQueryDBList).stream().map(dbo -> { BasicDBList l = new BasicDBList(); l.add(dbo); return l; } ).collect(Collectors.toList());
+	        	m_fChunkedByPosition = true;
+	        }
         }
         
         if (this.intervalQueries == null) {
@@ -294,6 +306,78 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
      *
      * @return the number of queries
      */
+    /**
+     * Tells whether a search's chunks are position intervals rather than tagged variant ID ranges. Being the only place where this is
+     * decided, and computable before building any query, it also lets per-chunk counts be cached under a key specific to the chunking.
+     *
+     * <p>When filtering on a precise zone (sequences and position bounds), that zone is chunked rather than using tagged variants: these
+     * split the whole genome into equal parts, so only the few whose ID range overlaps the zone hold data. When filtering on sequences
+     * only, it is done only if too few tagged variant chunks would hold data to keep the thread pool busy (e.g. ~1/12th of them for one
+     * chromosome out of 12): otherwise these chunks, containing equal numbers of contiguous variants, perform better. And only if the
+     * DB server is local: chunk queries are then pre-filtered on the variant collection (with the collation of its {sequence, start}
+     * index, see isChunkedByPosition()), whereas otherwise they would directly apply the sequence criterion to genotyping data, and
+     * without that collation (which would slow down the whole pipeline's string comparisons) only the start site index would be usable,
+     * making them read the genotyping data of all sequences within each interval.
+     */
+    public static boolean willChunkByPosition(MgdbSearchVariantsRequest req) throws Exception
+    {
+        if (req.getSelectedVariantIds() != null && !req.getSelectedVariantIds().isEmpty())
+            return false;	// VariantQueryBuilder then applies no position criteria
+        if (req.getReferenceName() == null || req.getReferenceName().isEmpty())
+            return false;
+        if ((req.getStart() != null && req.getStart() != -1) || (req.getEnd() != null && req.getEnd() != -1))
+            return true;
+
+        String sModule = Helper.extractModuleAndProjectIDsFromVariantSetIds(req.getVariantSetId())[0];
+        if (!MongoTemplateManager.isModuleOnLocalHost(sModule))
+            return false;
+
+        MongoTemplate mongoTemplate = MongoTemplateManager.get(sModule);
+        List<Map> taggedVariantList = mongoTemplate.findAll(Map.class, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS);
+        if (taggedVariantList.isEmpty()) {
+            MgdbDao.prepareDatabaseForSearches(sModule);    // list does not exist: create it (the decision must not change once it exists)
+            taggedVariantList = mongoTemplate.findAll(Map.class, MgdbDao.COLLECTION_NAME_TAGGED_VARIANT_IDS);
+        }
+        int nChunksHoldingData = countTaggedVariantChunksHoldingSequences(mongoTemplate, Assembly.safelyGetThreadBoundAssembly(sModule), taggedVariantList, Helper.split(req.getReferenceName(), ";")), nMaxThreads = MongoTemplateManager.getMaxQueryThreads(sModule);
+        boolean fChunkByPosition = nChunksHoldingData < nMaxThreads;
+        LOG.debug("~" + nChunksHoldingData + " of " + (taggedVariantList.size() + 1) + " tagged variant chunks hold selected sequences (thread pool size: " + nMaxThreads + "): chunking by " + (fChunkByPosition ? "position" : "tagged variants"));
+        return fChunkByPosition;
+    }
+
+    /**
+     * Estimates how many tagged variant chunks hold variants on the given sequences, from the sequences their bounds lie on: a chunk is
+     * counted if either of its bounds lies on one of them (variant IDs being assigned in genome order, a sequence lying entirely between
+     * two bounds on other sequences is missed, which only makes the estimate conservative).
+     */
+    private static int countTaggedVariantChunksHoldingSequences(MongoTemplate mongoTemplate, Integer nAssemblyId, List<Map> taggedVariantList, Collection<String> sequences)
+    {
+        List<Object> boundIDs = taggedVariantList.stream().map(tv -> tv.get("_id")).collect(Collectors.toList());
+        String sequencePath = Assembly.getVariantRefPosPath(nAssemblyId) + "." + ReferencePosition.FIELDNAME_SEQUENCE;
+        HashMap<Object, Object> boundSequences = new HashMap<>();
+        for (Document variant : mongoTemplate.getCollection(mongoTemplate.getCollectionName(VariantData.class)).find(new BasicDBObject("_id", new BasicDBObject("$in", boundIDs))).projection(new BasicDBObject(sequencePath, 1)))
+            boundSequences.put(variant.get("_id"), Helper.readPossiblyNestedField(variant, sequencePath, "; ", null));
+
+        boolean[] fBoundOnSelectedSequence = new boolean[boundIDs.size()];
+        for (int i = 0; i < boundIDs.size(); i++)
+            fBoundOnSelectedSequence[i] = sequences.contains(boundSequences.get(boundIDs.get(i)));
+
+        int nChunksHoldingData = 0;
+        for (int i = 0; i <= boundIDs.size(); i++)	// chunk i lies between bounds i-1 and i
+            if ((i > 0 && fBoundOnSelectedSequence[i - 1]) || (i < boundIDs.size() && fBoundOnSelectedSequence[i]))
+                nChunksHoldingData++;
+        return nChunksHoldingData;
+    }
+
+    /**
+     * Whether chunks are position intervals filtering on sequence and start site. Queries applying their criteria to a variant
+     * collection must then use {@link fr.cirad.mgdb.exporting.IExportHandler#collationObj}: the {sequence, start} index was created
+     * with it, and is otherwise unusable for the sequence criterion (the start site index alone would make them scan all sequences).
+     */
+    public boolean isChunkedByPosition()
+    {
+        return m_fChunkedByPosition;
+    }
+
     public int getNumberOfQueries()
     {
         return intervalQueries.size();
@@ -329,9 +413,34 @@ public class GenotypingDataQueryBuilder implements Iterator<List<BasicDBObject>>
     @Override
     public List<BasicDBObject> next()
     {
+        BasicDBList initialMatchList = intervalQueries.set(intervalIndexList.get(nNextCallCount++).intValue(), null);   // set this one to null to save memory
+        if (m_pipelineTail != null) {	// only the initial $match differs between chunks: reuse what the first call built for the rest
+            initialMatchList.addAll(m_initialMatchAdditions);
+            List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>(1 + m_pipelineTail.size());
+            pipeline.add(new BasicDBObject("$match", new BasicDBObject("$and", initialMatchList)));
+            pipeline.addAll(m_pipelineTail);
+            return pipeline;
+        }
+
+        int nChunkCriterionCount = initialMatchList.size();
+        List<BasicDBObject> pipeline = buildPipeline(initialMatchList);
+        m_initialMatchAdditions = new ArrayList<Object>(initialMatchList.subList(nChunkCriterionCount, initialMatchList.size()));	// run restriction, or criterion returning no results
+        m_pipelineTail = new ArrayList<BasicDBObject>(pipeline.subList(1, pipeline.size()));
+        return pipeline;
+    }
+
+    /**
+     * Builds a chunk's pipeline. Apart from criteria added to the chunk's initial match (initialMatchList), it does not depend on the
+     * chunk: next() thus only invokes it once, and shares the stages following the initial $match between all chunks' pipelines. These
+     * stages, and objects added to the initial match, must therefore never be modified once built (callers only modify the pipeline
+     * list itself and its initial $match, see GigwaGa4ghServiceImpl.applyPreFiltering()). Building them takes tens of milliseconds
+     * when many samples are involved, which, done for each of hundreds of chunks by a single thread, would delay the last ones by
+     * tens of seconds.
+     */
+    private List<BasicDBObject> buildPipeline(BasicDBList initialMatchList)
+    {
         List<BasicDBObject> pipeline = new ArrayList<BasicDBObject>();
         BasicDBList annotationMatchList = new BasicDBList(), finalMatchList = new BasicDBList();
-        BasicDBList initialMatchList = intervalQueries.set(intervalIndexList.get(nNextCallCount++).intValue(), null);   // set this one to null to save memory
 
         /* Step to match variants according to annotations */            
         if (projectHasEffectAnnotations && (req.getGeneName().length() > 0 || req.getVariantEffect().length() > 0)) {
