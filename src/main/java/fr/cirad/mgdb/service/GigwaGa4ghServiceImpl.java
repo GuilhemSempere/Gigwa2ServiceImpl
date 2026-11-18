@@ -63,7 +63,7 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import org.apache.avro.AvroRemoteException;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.log4j.Logger;
 import org.bson.Document;
@@ -514,11 +514,11 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         	Collection<BasicDBList> variantDataQueries = varQueryWrapper.getVariantDataQueries();
             if (filteredGroups.isEmpty()) { // filtering on variant features only: we just need a count
                 if (variantDataQueries.isEmpty())
-                    count = mongoTemplate.count(new Query(), VariantData.class);    // no filter whatsoever
+                    count = Helper.estimDocCount(mongoTemplate, VariantData.class);    // no filter whatsoever: read from collection metadata instead of scanning it
                 else {
                     count = 0l;
                     count = variantDataQueries.parallelStream()
-                            .map(req -> varColl.countDocuments(req.isEmpty() ? new BasicDBObject() : new BasicDBObject("$and", req)))
+                            .map(req -> req.isEmpty() ? Helper.estimDocCount(mongoTemplate, VariantData.class) : varColl.countDocuments(new BasicDBObject("$and", req), new CountOptions().collation(Helper.getPositionCollationIfFilteringOnSequence(req))))
                             .reduce(count, (accumulator, _item) -> accumulator + _item);
                 }
             }
@@ -722,7 +722,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
 	                varColl.aggregate(Arrays.asList(
 	                    new BasicDBObject("$match", new BasicDBObject("$and", req)),
 	                    new BasicDBObject("$merge", new BasicDBObject("into", tmpVarColl.getNamespace().getCollectionName()).append("whenMatched", "fail"))
-	                )).toCollection();
+	                )).collation(Helper.getPositionCollationIfFilteringOnSequence(req)).toCollection();
 	
 	                progress.setCurrentStepProgress(nProcessedChunkCount.incrementAndGet() * 100 / variantDataQueries.size());
 	            });
@@ -948,7 +948,7 @@ public class GigwaGa4ghServiceImpl implements IGigwaService, VariantMethods, Ref
         Authentication auth = tokenManager.getAuthenticationFromToken(tokenManager.readToken(gsver.getRequest()));
         if (gsver.shallApplyMatrixSizeLimit())
         {    // make sure the matrix is not too big
-            BigInteger matrixSize = BigInteger.valueOf(mongoTemplate.getCollection(usedVarCollName).countDocuments(variantQueryForTargetCollection)).multiply(BigInteger.valueOf(materialToExport.size()));
+            BigInteger matrixSize = BigInteger.valueOf(mongoTemplate.getCollection(usedVarCollName).countDocuments(variantQueryForTargetCollection, new CountOptions().collation(Helper.getPositionCollationIfFilteringOnSequence(variantQueryForTargetCollection)))).multiply(BigInteger.valueOf(materialToExport.size()));
             String matrixSizeLimitError = ExportSizeLimitHelper.getExportMatrixSizeLimitErrorMessage(appConfig, auth, matrixSize);
             if (matrixSizeLimitError != null)
             {
